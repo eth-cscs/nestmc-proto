@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+
+# arguments: [constant_name:value...]
+
+for constant in "$@"; do
+    echo "#define ARB_${constant%%:*} ${constant#*:}"
+done
+

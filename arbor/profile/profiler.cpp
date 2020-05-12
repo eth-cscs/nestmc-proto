@@ -1,6 +1,7 @@
 #include <cstdio>
 #include <mutex>
 #include <ostream>
+#include <stack>
 
 #include <arbor/context.hpp>
 #include <arbor/profile/profiler.hpp>
@@ -60,6 +61,8 @@ class recorder {
     // If set to npos, no region is being timed.
     region_id_type index_ = npos;
 
+    std::stack<region_id_type> history;
+
     tick_type start_time_;
 
     // One accumulator for call count and wall time for each region.
@@ -70,15 +73,21 @@ public:
     const std::vector<profile_accumulator>& accumulators() const;
 
     // Start timing the region with index.
-    // Throws std::runtime_error if already timing a region.
+    // Re-entrant for timing regions
     void enter(region_id_type index);
 
     // Stop timing the current region, and add the time taken to the accumulated time.
     // Throws std::runtime_error if not currently timing a region.
+    // Re-enters old timing region if re-entrant.
     void leave();
 
     // Reset all of the accumulated call counts and times to zero.
     void clear();
+
+protected:
+    // internal code
+    void _enter(region_id_type index);
+    void _leave();
 };
 
 // Manages the thread-local recorders.
@@ -143,10 +152,7 @@ const std::vector<profile_accumulator>& recorder::accumulators() const {
     return accumulators_;
 }
 
-void recorder::enter(region_id_type index) {
-    if (index_!=npos) {
-        throw std::runtime_error("recorder::enter without matching recorder::leave");
-    }
+void recorder::_enter(region_id_type index) {
     if (index>=accumulators_.size()) {
         accumulators_.resize(index+1);
     }
@@ -154,7 +160,7 @@ void recorder::enter(region_id_type index) {
     start_time_ = timer_type::tic();
 }
 
-void recorder::leave() {
+void recorder::_leave() {
     // calculate the elapsed time before any other steps, to increase accuracy.
     auto delta = timer_type::toc(start_time_);
 
@@ -166,9 +172,27 @@ void recorder::leave() {
     index_ = npos;
 }
 
+void recorder::enter(region_id_type index) {
+    if (index_!=npos) {
+        history.push(index_);
+        _leave();
+    }
+    _enter(index);
+}
+
+void recorder::leave() {
+    _leave();
+    if (! history.empty()) {
+        auto index = history.top();
+        history.pop();
+        _enter(index);
+    }
+}
+
 void recorder::clear() {
     index_ = npos;
     accumulators_.resize(0);
+    history = decltype(history){};
 }
 
 // profiler implementation

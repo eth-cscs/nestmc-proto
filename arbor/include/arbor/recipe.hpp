@@ -91,3 +91,9 @@ public:
 };
 
 } // namespace arb
+
+static inline std::ostream& operator<<(std::ostream& o, arb::cell_connection const& con) {
+    return o << "ccon [" << con.source << " -> " << con.dest
+             << " : weight " << con.weight
+             << ", delay " << con.delay << "]";
+}

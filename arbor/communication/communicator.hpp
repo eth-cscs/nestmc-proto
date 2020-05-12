@@ -6,6 +6,7 @@
 #include <arbor/domain_decomposition.hpp>
 #include <arbor/recipe.hpp>
 #include <arbor/spike.hpp>
+#include <arbor/version.hpp>
 
 #include "communication/gathered_vector.hpp"
 #include "connection.hpp"
@@ -27,8 +28,6 @@ namespace arb {
 
 class communicator {
 public:
-    communicator() {}
-
     explicit communicator(const recipe& rec,
                           const domain_decomposition& dom_dec,
                           execution_context& ctx);
@@ -62,18 +61,27 @@ public:
 
     cell_size_type num_local_cells() const;
 
-    const std::vector<connection>& connections() const;
+    const std::vector<connection>& connections() const; // do we need this?
 
     void reset();
 
+    using connection_list = std::vector<connection>;
+    using cell_list = std::vector<cell_size_type>;
+    using group_partition = util::partition_view_type<cell_list>; 
+    
 private:
     cell_size_type num_local_cells_;
     cell_size_type num_local_groups_;
     cell_size_type num_domains_;
-    std::vector<connection> connections_;
-    std::vector<cell_size_type> connection_part_;
-    std::vector<cell_size_type> index_divisions_;
-    util::partition_view_type<std::vector<cell_size_type>> index_part_;
+    cell_size_type num_chunks_;
+
+    std::vector<connection_list> connections_; // connections broken into chunks, ordered by domains
+    connection_list connections_ext_; // same list, but flattened for external use, ordered by cell id (is this needed?)
+
+    std::vector<cell_list> connection_part_; // partition connections_ by cells, partitioned by chunks
+
+    group_partition index_part_; // partition local cells by group index in domain_decomposition
+    cell_list index_divisions_; // underlying division for index_part_
 
     distributed_context_handle distributed_;
     task_system_handle thread_pool_;

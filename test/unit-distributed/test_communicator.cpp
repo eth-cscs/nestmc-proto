@@ -391,7 +391,7 @@ TEST(communicator, ring)
     // use a node decomposition that reflects the resources available
     // on the node that the test is running on, including gpus.
     const auto D = partition_load_balance(R, g_context);
-    auto C = communicator(R, D, *g_context);
+    communicator C{R, D, *g_context};
 
     // every cell fires
     EXPECT_TRUE(test_ring(D, C, [](cell_gid_type g){return true;}));
@@ -486,7 +486,7 @@ TEST(communicator, all2all)
     // use a node decomposition that reflects the resources available
     // on the node that the test is running on, including gpus.
     const auto D = partition_load_balance(R, g_context);
-    auto C = communicator(R, D, *g_context);
+    communicator C{R, D, *g_context};
 
     // every cell fires
     EXPECT_TRUE(test_all2all(D, C, [](cell_gid_type g){return true;}));

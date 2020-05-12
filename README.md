@@ -31,3 +31,5 @@ The following BibTeX entry can be used to cite Arbor:
 ```
 
 Alternative citation formats for the paper can be [downloaded here](https://ieeexplore.ieee.org/abstract/document/8671560), and a preprint is available at [arXiv](https://arxiv.org/abs/1901.07454).
+
+Something about SGA2 & SGA3
