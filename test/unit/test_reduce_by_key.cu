@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <vector>
 
-#include <backends/gpu/reduce_by_key.hpp>
+#include <arbor/gpu/reduce_by_key.hpp>
 
 #include "gpu_vector.hpp"
 

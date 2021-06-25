@@ -121,49 +121,49 @@ PostEventExpression* find_post_event(const Module& m) {
 
 indexed_variable_info decode_indexed_variable(IndexedVariable* sym) {
     indexed_variable_info v;
-    v.node_index_var = "node_index_";
+    v.node_index_var = "node_index";
     v.scale = 1;
     v.accumulate = true;
     v.readonly = true;
 
     std::string ion_pfx;
     if (sym->is_ion()) {
-        ion_pfx = "ion_"+sym->ion_channel()+"_";
-        v.node_index_var = ion_pfx+"index_";
+        ion_pfx = "ion_"+sym->ion_channel();
+        v.node_index_var = ion_pfx+"_index";
     }
 
     switch (sym->data_source()) {
     case sourceKind::voltage:
-        v.data_var="vec_v_";
+        v.data_var="vec_v";
         v.readonly = true;
         break;
     case sourceKind::current_density:
-        v.data_var = "vec_i_";
+        v.data_var = "vec_i";
         v.readonly = false;
         v.scale = 0.1;
         break;
     case sourceKind::current:
         // unit scale; sourceKind for point processes updating current variable.
-        v.data_var = "vec_i_";
+        v.data_var = "vec_i";
         v.readonly = false;
         break;
     case sourceKind::conductivity:
-        v.data_var = "vec_g_";
+        v.data_var = "vec_g";
         v.readonly = false;
         v.scale = 0.1;
         break;
     case sourceKind::conductance:
         // unit scale; sourceKind for point processes updating conductivity.
-        v.data_var = "vec_g_";
+        v.data_var = "vec_g";
         v.readonly = false;
         break;
     case sourceKind::dt:
-        v.data_var = "vec_dt_";
+        v.data_var = "vec_dt";
         v.readonly = true;
         break;
     case sourceKind::time:
-        v.data_var = "vec_t_";
-        v.cell_index_var = "vec_di_";
+        v.data_var = "vec_t";
+        v.cell_index_var = "vec_di";
         v.readonly = true;
         break;
     case sourceKind::ion_current_density:
@@ -195,11 +195,11 @@ indexed_variable_info decode_indexed_variable(IndexedVariable* sym) {
         v.readonly = true;
         break;
     case sourceKind::temperature:
-        v.data_var = "temperature_degC_";
+        v.data_var = "temperature_degC";
         v.readonly = true;
         break;
     case sourceKind::diameter:
-        v.data_var = "diam_um_";
+        v.data_var = "diam_um";
         v.readonly = true;
         break;
     default:

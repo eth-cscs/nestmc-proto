@@ -8,6 +8,8 @@ string(REGEX MATCH "^[0-9]+(\\.[0-9]+)?(\\.[0-9]+)?(\\.[0-9]+)?" numeric_version
 project(arbor VERSION ${numeric_version})
 enable_language(CXX)
 
+include(GNUInstallDirs)
+
 # Turn on this option to force the compilers to produce color output when output is
 # redirected from the terminal (e.g. when using ninja or a pager).
 
@@ -171,6 +173,9 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # to the 'export set', even the private ones, and this must be done
 # in the same CMakeLists.txt in which the target is defined.
 
+# Data and internal scripts go here
+set(ARB_INSTALL_DATADIR ${CMAKE_INSTALL_FULL_DATAROOTDIR}/arbor)
+
 # Interface library `arbor-config-defs` collects configure-time defines
 # for arbor, arborenv, arborio, of the form ARB_HAVE_XXX. These
 # defines should _not_ be used in any installed public headers.
@@ -212,6 +217,12 @@ install(TARGETS arbor-public-deps EXPORT arbor-targets)
 add_library(arborio-public-deps INTERFACE)
 install(TARGETS arborio-public-deps EXPORT arborio-targets)
 
+# Add scripts and supporting CMake for setting up external catalogues
+
+configure_file(scripts/build-catalogue.in ${CMAKE_CURRENT_BINARY_DIR}/build-catalogue @ONLY)
+install(PROGRAMS ${CMAKE_CURRENT_BINARY_DIR}/build-catalogue DESTINATION ${CMAKE_INSTALL_FULL_BINDIR})
+install(FILES mechanisms/BuildModules.cmake DESTINATION ${ARB_INSTALL_DATADIR})
+install(FILES mechanisms/generate_catalogue DESTINATION ${ARB_INSTALL_DATADIR} PERMISSIONS OWNER_READ OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE)
 # External libraries in `ext` sub-directory: json, tinyopt and randon123.
 # Creates interface libraries `ext-json`, `ext-tinyopt` and `ext-random123`
 
@@ -223,6 +234,8 @@ else()
   unset(nlohmann_json_DIR CACHE)
 endif()
 add_subdirectory(ext)
+
+cmake_dependent_option(ARB_USE_BUNDLED_FMT "Use bundled FMT lib." ON "ARB_USE_BUNDLED_LIBS" OFF)
 
 # Keep track of packages we need to add to the generated CMake config
 # file for arbor.

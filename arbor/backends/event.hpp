@@ -22,13 +22,12 @@ struct target_handle {
 
 struct deliverable_event {
     time_type time;
-    target_handle handle;
     float weight;
+    target_handle handle;
 
     deliverable_event() {}
     deliverable_event(time_type time, target_handle handle, float weight):
-        time(time), handle(handle), weight(weight)
-    {}
+        time(time), weight(weight), handle(handle) {}
 };
 
 // Stream index accessor function for multi_event_stream:

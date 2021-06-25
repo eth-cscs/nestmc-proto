@@ -76,9 +76,55 @@ Two catalogues are provided that collect mechanisms associated with specific pro
 * *bbp* For models published by the Blue Brain Project (BBP).
 * *allen* For models published on the Allen Brain Atlas Database.
 
-Further catalogues can be added by extending the list of built-in catalogues in
-the arbor source tree or by compiling a dynamically loadable catalogue
-(:ref:`extending catalogues <extending-catalogues>`).
+.. _mechanisms_dynamic:
+
+Adding Catalogues to Arbor
+''''''''''''''''''''''''''
+
+.. Note::
+
+   If you are coming from NEURON this is the equivalent of ``nrnivmodl``.
+
+This will produce a catalogue loadable at runtime by calling ``load_catalogue``
+with a filename in both C++ and Python. The steps are
+
+1. Prepare a directory containing your NMODL files (.mod suffixes required)
+2. Call ``build-catalogue`` installed by arbor
+
+   .. code-block :: bash
+
+     build-catalogue <name> <path/to/nmodl>
+
+All files with the suffix ``.mod`` located in ``<path/to/nmodl>`` will be baked into
+a catalogue named ``lib<name>-catalogue.so`` and placed into your current working
+directory. Note that these files are platform-specific and should only be used
+on the combination of OS, compiler, arbor, and machine they were built with.
+
+Errors might be diagnosable by passing the ``-v`` flag.
+
+This catalogue can then be used similarly to the built-in ones
+
+   .. code-block :: python
+
+     import arbor as A
+
+     c = A.load_catalogue('bbp2-catalogue.so')
+
+     [n for n in c]
+     >> ['Ca_LVAst',
+         'Nap_Et2',
+         'NaTa_t',
+         'SKv3_1',
+         'K_Tst',
+         'Ih',
+         'SK_E2',
+         'Ca_HVA',
+         'CaDynamics_E2',
+         'Im',
+         'NaTs2_t',
+         'K_Pst']
+
+See also the demonstration in ``python/example/dynamic-catalogue.py`` for an example.
 
 Parameters
 ''''''''''

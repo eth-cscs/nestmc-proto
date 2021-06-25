@@ -3,6 +3,7 @@
 #include <ostream>
 #include <unordered_map>
 
+#include "printerutil.hpp"
 #include "cexpr_emit.hpp"
 #include "error.hpp"
 #include "lexer.hpp"
@@ -226,7 +227,7 @@ std::string id_prefix(IdentifierExpression* id) {
         if (auto symbol = id->symbol()->is_symbol()) {
             if (auto var = symbol->is_variable()) {
                 if (!var->is_local_variable()) {
-                    return "pp->"+id->name();
+                    return pp_var_pfx + id->name();
                 }
             }
         }
@@ -374,6 +375,7 @@ void SimdExprEmitter::visit(CallExpression* e) {
 }
 
 void SimdExprEmitter::visit(AssignmentExpression* e) {
+    ENTER(out_);
     if (!e->lhs() || !e->lhs()->is_identifier() || !e->lhs()->is_identifier()->symbol()) {
         throw compiler_exception("Expect symbol on lhs of assignment: "+e->to_string());
     }
@@ -382,7 +384,6 @@ void SimdExprEmitter::visit(AssignmentExpression* e) {
     Symbol* lhs = e->lhs()->is_identifier()->symbol();
 
     auto lhs_pfxd = id_prefix(e->lhs()->is_identifier());
-
 
     if (lhs->is_variable() && lhs->is_variable()->is_range()) {
         if (!input_mask_.empty()) {
@@ -408,6 +409,7 @@ void SimdExprEmitter::visit(AssignmentExpression* e) {
         out_ << ") = ";
         e->rhs()->accept(this);
     }
+    EXIT(out_);
 }
 
 void SimdExprEmitter::visit(IfExpression* e) {

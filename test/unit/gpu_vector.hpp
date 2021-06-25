@@ -2,7 +2,7 @@
 
 #include <vector>
 
-#include "backends/gpu/gpu_api.hpp"
+#include <arbor/gpu/gpu_api.hpp>
 
 /*
  * Helpers for using GPU memory in unit tests.

@@ -226,7 +226,7 @@ struct fvm_mechanism_config {
     using value_type = fvm_value_type;
     using index_type = fvm_index_type;
 
-    mechanismKind kind;
+    arb_mechanism_kind kind;
 
     // Ordered CV indices where mechanism is present; may contain
     // duplicates for point mechanisms.

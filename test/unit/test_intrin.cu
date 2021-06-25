@@ -2,8 +2,8 @@
 
 #include <limits>
 
-#include "backends/gpu/gpu_api.hpp"
-#include "backends/gpu/math_cu.hpp"
+#include <arbor/gpu/gpu_api.hpp>
+#include <arbor/gpu/math_cu.hpp>
 
 #include "gpu_vector.hpp"
 

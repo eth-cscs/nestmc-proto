@@ -235,7 +235,7 @@ public :
     virtual VariableExpression*   is_variable()          {return nullptr;}
     virtual ProcedureExpression*  is_procedure()         {return nullptr;}
     virtual NetReceiveExpression* is_net_receive()       {return nullptr;}
-    virtual PostEventExpression*  is_post_event()       {return nullptr;}
+    virtual PostEventExpression*  is_post_event()        {return nullptr;}
     virtual APIMethod*            is_api_method()        {return nullptr;}
     virtual IndexedVariable*      is_indexed_variable()  {return nullptr;}
     virtual LocalVariable*        is_local_variable()    {return nullptr;}

@@ -10,6 +10,8 @@
 #include <utility>
 #include <vector>
 
+#include <arbor/mechanism_abi.h>
+
 namespace arb {
 
 struct mechanism_field_spec {
@@ -51,6 +53,17 @@ struct ion_dependency {
 using mechanism_fingerprint = std::string;
 
 struct mechanism_info {
+
+    // mechanism_info is a convenient subset of the ABI mech description
+    mechanism_info(const arb_mechanism_type&);
+    mechanism_info(const std::unordered_map<std::string, mechanism_field_spec>&,
+                   const std::unordered_map<std::string, mechanism_field_spec>&,
+                   const std::unordered_map<std::string, mechanism_field_spec>&,
+                   const std::unordered_map<std::string, ion_dependency>&,
+                   const mechanism_fingerprint&,
+                   bool=false,
+                   bool=false);
+
     // Global fields have one value common to an instance of a mechanism, are
     // constant in time and set at instantiation.
     std::unordered_map<std::string, mechanism_field_spec> globals;

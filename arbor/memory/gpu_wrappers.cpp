@@ -7,7 +7,7 @@
 
 #ifdef ARB_HAVE_GPU
 
-#include <backends/gpu/gpu_api.hpp>
+#include <arbor/gpu/gpu_api.hpp>
 
 #define HANDLE_GPU_ERROR(error, msg)\
 throw arbor_exception("GPU memory:: "+std::string(__func__)+" "+std::string((msg))+": "+error.description());

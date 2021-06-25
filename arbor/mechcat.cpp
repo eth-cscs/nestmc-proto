@@ -7,12 +7,16 @@
 
 #include <dlfcn.h>
 
+#include <arbor/version.hpp>
 #include <arbor/arbexcept.hpp>
 #include <arbor/mechcat.hpp>
+#include <arbor/mechanism_abi.h>
+#include <arbor/mechanism.hpp>
 #include <arbor/util/expected.hpp>
 
 #include "util/rangeutil.hpp"
 #include "util/maputil.hpp"
+#include "util/span.hpp"
 
 /* Notes on implementation:
  *
@@ -142,7 +146,7 @@ struct catalogue_state {
         }
 
         for (const auto& name_impls: other.impl_map_) {
-            std::unordered_map<std::type_index, std::unique_ptr<mechanism>> impls;
+            std::unordered_map<arb_backend_kind, std::unique_ptr<mechanism>> impls;
             for (const auto& tidx_mptr: name_impls.second) {
                 impls[tidx_mptr.first] = tidx_mptr.second->clone();
             }
@@ -172,13 +176,13 @@ struct catalogue_state {
     }
 
     // Register concrete mechanism for a back-end type.
-    hopefully<void> register_impl(std::type_index tidx, const std::string& name, std::unique_ptr<mechanism> mech) {
+    hopefully<void> register_impl(arb_backend_kind kind, const std::string& name, std::unique_ptr<mechanism> mech) {
         if (auto fptr = fingerprint_ptr(name)) {
             if (mech->fingerprint()!=*fptr.value()) {
                 return unexpected_exception_ptr(fingerprint_mismatch(name));
             }
 
-            impl_map_[name][tidx] = std::move(mech);
+            impl_map_[name][kind] = std::move(mech);
             return {};
         }
         else {
@@ -326,7 +330,7 @@ struct catalogue_state {
         new_info->ions = std::move(new_ions);
 
         deriv.derived_info = std::move(new_info);
-        return std::move(deriv);
+        return deriv;
     }
 
     // Implicit derivation.
@@ -399,7 +403,7 @@ struct catalogue_state {
     }
 
     // Retrieve implementation for this mechanism name or closest ancestor.
-    hopefully<std::unique_ptr<mechanism>> implementation(std::type_index tidx, const std::string& name) const {
+    hopefully<std::unique_ptr<mechanism>> implementation(arb_backend_kind kind, const std::string& name) const {
         const std::string* impl_name = &name;
         hopefully<derivation> implicit_deriv;
 
@@ -413,7 +417,7 @@ struct catalogue_state {
 
         for (;;) {
             if (const auto* mech_impls = ptr_by_key(impl_map_, *impl_name)) {
-                if (auto* p = ptr_by_key(*mech_impls, tidx)) {
+                if (auto* p = ptr_by_key(*mech_impls, kind)) {
                     return p->get()->clone();
                 }
             }
@@ -498,7 +502,7 @@ struct catalogue_state {
     string_map<derivation> derived_map_;
 
     // Prototype register, keyed on mechanism name, then backend type (index).
-    string_map<std::unordered_map<std::type_index, mechanism_ptr>> impl_map_;
+    string_map<std::unordered_map<arb_backend_kind, mechanism_ptr>> impl_map_;
 };
 
 // Mechanism catalogue method implementations.
@@ -568,16 +572,12 @@ void mechanism_catalogue::remove(const std::string& name) {
     state_->remove(name);
 }
 
-void mechanism_catalogue::register_impl(std::type_index tidx, const std::string& name, std::unique_ptr<mechanism> mech) {
-    value(state_->register_impl(tidx, name, std::move(mech)));
+void mechanism_catalogue::register_impl(arb_backend_kind kind, const std::string& name, mechanism_ptr mech) {
+    value(state_->register_impl(kind, name, std::move(mech)));
 }
 
-std::pair<mechanism_ptr, mechanism_overrides> mechanism_catalogue::instance_impl(std::type_index tidx, const std::string& name) const {
-    std::pair<mechanism_ptr, mechanism_overrides> result;
-    result.first = value(state_->implementation(tidx, name));
-    result.second = value(state_->overrides(name));
-
-    return result;
+std::pair<mechanism_ptr, mechanism_overrides> mechanism_catalogue::instance_impl(arb_backend_kind kind, const std::string& name) const {
+    return {value(state_->implementation(kind, name)), value(state_->overrides(name))};
 }
 
 mechanism_catalogue::~mechanism_catalogue() = default;

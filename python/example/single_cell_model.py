@@ -3,6 +3,8 @@
 import arbor
 import pandas, seaborn # You may have to pip install these.
 
+print(arbor.__config__)
+
 # (1) Create a morphology with a single (cylindrical) segment of length=diameter=6 μm
 tree = arbor.segment_tree()
 tree.append(arbor.mnpos, arbor.mpoint(-3, 0, 0, 3), arbor.mpoint(3, 0, 0, 3), tag=1)

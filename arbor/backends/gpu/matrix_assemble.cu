@@ -1,6 +1,6 @@
 #include <arbor/fvm_types.hpp>
 
-#include "gpu_common.hpp"
+#include <arbor/gpu/gpu_common.hpp>
 #include "matrix_common.hpp"
 
 namespace arb {

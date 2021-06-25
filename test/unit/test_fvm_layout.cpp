@@ -155,7 +155,7 @@ TEST(fvm_layout, mech_index) {
     // HH on somas of two cells, with CVs 0 and 5.
     // Proportional area contrib: soma area/CV area.
 
-    EXPECT_EQ(mechanismKind::density, hh_config.kind);
+    EXPECT_EQ(arb_mechanism_kind_density, hh_config.kind);
     EXPECT_EQ(ivec({0,6}), hh_config.cv);
 
     // Three expsyn synapses, two 0.4 along branch 1, and one 0.4 along branch 5.

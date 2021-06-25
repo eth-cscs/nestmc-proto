@@ -1,9 +1,9 @@
 #include <cmath>
 
 #include <arbor/fvm_types.hpp>
+#include <arbor/gpu/math_cu.hpp>
 
 #include "backends/threshold_crossing.hpp"
-#include "math_cu.hpp"
 #include "stack_cu.hpp"
 
 namespace arb {

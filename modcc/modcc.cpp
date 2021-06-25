@@ -240,7 +240,10 @@ int main(int argc, char **argv) {
         // If no output prefix given, use the module name.
         std::string prefix = opt.outprefix.empty()? m.module_name(): opt.outprefix;
 
-        io::write_all(build_info_header(m, popt), prefix+".hpp");
+        bool have_cpu = opt.targets.find(targetKind::cpu) != opt.targets.end();
+        bool have_gpu = opt.targets.find(targetKind::gpu) != opt.targets.end();
+
+        io::write_all(build_info_header(m, popt, have_cpu, have_gpu), prefix+".hpp");
         for (targetKind target: opt.targets) {
             std::string outfile = prefix;
             switch (target) {

@@ -32,6 +32,8 @@ struct backend {
     using array  = arb::gpu::array;
     using iarray = arb::gpu::iarray;
 
+    static constexpr arb_backend_kind kind = arb_backend_kind_gpu;
+
     static memory::host_vector<value_type> host_view(const array& v) {
         return memory::on_host(v);
     }
@@ -67,7 +69,7 @@ struct backend {
     }
 
     static value_type* mechanism_field_data(arb::mechanism* mptr, const std::string& field);
+    static void multiply_in_place(fvm_value_type* s, const fvm_index_type* p, int n);
 };
-
 } // namespace gpu
 } // namespace arb

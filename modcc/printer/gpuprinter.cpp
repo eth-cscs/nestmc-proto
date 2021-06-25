@@ -2,6 +2,12 @@
 #include <iostream>
 #include <string>
 #include <set>
+#include <regex>
+
+#define FMT_HEADER_ONLY YES
+#include <fmt/core.h>
+#include <fmt/format.h>
+#include <fmt/compile.h>
 
 #include "gpuprinter.hpp"
 #include "expression.hpp"
@@ -14,12 +20,11 @@ using io::indent;
 using io::popindent;
 using io::quote;
 
-void emit_common_defs(std::ostream&, const Module& module_);
-void emit_api_body_cu(std::ostream& out, APIMethod* method, bool is_point_proc, bool cv_loop = true);
+void emit_api_body_cu(std::ostream& out, APIMethod* method, bool is_point_proc, bool cv_loop = true, bool ppack=true);
 void emit_procedure_body_cu(std::ostream& out, ProcedureExpression* proc);
 void emit_state_read_cu(std::ostream& out, LocalVariable* local);
-void emit_state_update_cu(std::ostream& out, Symbol* from,
-                          IndexedVariable* external, bool is_point_proc);
+void emit_state_update_cu(std::ostream& out, Symbol* from, IndexedVariable* external, bool is_point_proc);
+
 const char* index_id(Symbol *s);
 
 struct cuprint {
@@ -32,246 +37,156 @@ struct cuprint {
     }
 };
 
-std::string make_class_name(const std::string& module_name) {
-    return "mechanism_gpu_"+module_name;
-}
+static std::string make_class_name(const std::string& n) { return "mechanism_" + n + "_gpu";}
+static std::string make_ppack_name(const std::string& module_name) { return make_class_name(module_name)+"_pp_"; }
+static std::string ion_field(const IonDep& ion) { return fmt::format("ion_{}",       ion.name); }
+static std::string ion_index(const IonDep& ion) { return fmt::format("ion_{}_index", ion.name); }
 
-std::string make_ppack_name(const std::string& module_name) {
-    return make_class_name(module_name)+"_pp_";
-}
-
-static std::string ion_state_field(const std::string& ion_name) {
-    return "ion_"+ion_name+"_";
-}
-
-static std::string ion_state_index(const std::string& ion_name) {
-    return "ion_"+ion_name+"_index_";
-}
 
 std::string emit_gpu_cpp_source(const Module& module_, const printer_options& opt) {
-    std::string name = module_.module_name();
+    std::string name       = module_.module_name();
     std::string class_name = make_class_name(name);
     std::string ppack_name = make_ppack_name(name);
-    auto ns_components = namespace_components(opt.cpp_namespace);
-
-    NetReceiveExpression* net_receive = find_net_receive(module_);
-    PostEventExpression*  post_event  = find_post_event(module_);
-
+    auto ns_components     = namespace_components(opt.cpp_namespace);
     auto vars = local_module_variables(module_);
     auto ion_deps = module_.ion_deps();
 
-    std::string fingerprint = "<placeholder>";
-
     io::pfxstringstream out;
 
-    net_receive && out <<
-        "#include <" << arb_private_header_prefix() << "backends/event.hpp>\n"
-        "#include <" << arb_private_header_prefix() << "backends/multi_event_stream_state.hpp>\n";
+    out << "#include <arbor/mechanism_abi.h>\n"
+        << "#include <cmath>\n\n"
+        << namespace_declaration_open(ns_components)
+        << fmt::format("void {0}_init_(arb_mechanism_ppack*);\n"
+                       "void {0}_advance_state_(arb_mechanism_ppack*);\n"
+                       "void {0}_compute_currents_(arb_mechanism_ppack*);\n"
+                       "void {0}_write_ions_(arb_mechanism_ppack*);\n"
+                       "void {0}_apply_events_(arb_mechanism_ppack*);\n"
+                       "void {0}_post_event_(arb_mechanism_ppack*);\n\n",
+                       class_name)
+        << namespace_declaration_close(ns_components)
+        << "\n";
 
-    out << "#include <" << arb_private_header_prefix() << "backends/gpu/mechanism.hpp>\n"
-        << "#include <arbor/mechanism_ppack.hpp>\n";
+    std::stringstream ss;
+    for (const auto& c: ns_components) ss << c <<"::";
 
-    out << "\n" << namespace_declaration_open(ns_components) << "\n";
-
-    emit_common_defs(out, module_);
-
-    out <<
-        "void " << class_name << "_init_(" << ppack_name << "&);\n"
-        "void " << class_name << "_advance_state_(" << ppack_name << "&);\n"
-        "void " << class_name << "_compute_currents_(" << ppack_name << "&);\n"
-        "void " << class_name << "_write_ions_(" << ppack_name << "&);\n";
-
-    net_receive && out <<
-        "void " << class_name << "_apply_events_(int mech_id, "
-        << ppack_name << "&, deliverable_event_stream_state events);\n";
-
-    post_event && out <<
-        "void " << class_name << "_post_event_(" << ppack_name << "&);\n";
-
-
-    out <<
-        "\n"
-        "class " << class_name << ": public ::arb::gpu::mechanism {\n"
-        "public:\n" << indent <<
-        "const ::arb::mechanism_fingerprint& fingerprint() const override {\n" << indent <<
-        "static ::arb::mechanism_fingerprint hash = " << quote(fingerprint) << ";\n"
-        "return hash;\n" << popindent <<
-        "}\n\n"
-        "std::string internal_name() const override { return " << quote(name) << "; }\n"
-        "::arb::mechanismKind kind() const override { return " << module_kind_str(module_) << "; }\n"
-        "::arb::mechanism_ptr clone() const override { return ::arb::mechanism_ptr(new " << class_name << "()); }\n"
-        "\n"
-        "void init() override {\n" << indent <<
-        class_name << "_init_(pp_);\n" << popindent <<
-        "}\n\n"
-        "void advance_state() override {\n" << indent <<
-        class_name << "_advance_state_(pp_);\n" << popindent <<
-        "}\n\n"
-        "void compute_currents() override {\n" << indent <<
-        class_name << "_compute_currents_(pp_);\n" << popindent <<
-        "}\n\n"
-        "void write_ions() override {\n" << indent <<
-        class_name << "_write_ions_(pp_);\n" << popindent <<
-        "}\n\n";
-
-    net_receive && out <<
-        "void apply_events(deliverable_event_stream_state events) override {\n" << indent <<
-        class_name << "_apply_events_(mechanism_id_, pp_, events);\n" << popindent <<
-        "}\n\n";
-
-    post_event && out <<
-        "void post_event() override {\n" << indent <<
-        class_name << "_post_event_(pp_);\n" << popindent <<
-        "}\n\n";
-
-    out << popindent <<
-        "protected:\n" << indent <<
-        "std::size_t object_sizeof() const override { return sizeof(*this); }\n"
-        "::arb::mechanism_ppack* ppack_ptr() override { return &pp_; }\n\n";
-
-    io::separator sep("\n", ",\n");
-    if (!vars.scalars.empty()) {
-        out <<
-            "mechanism_global_table global_table() override {\n" << indent <<
-            "return {" << indent;
-
-        for (const auto& scalar: vars.scalars) {
-            auto memb = scalar->name();
-            out << sep << "{" << quote(memb) << ", &pp_." << memb << "}";
-        }
-        out << popindent << "\n};\n" << popindent << "}\n";
-    }
-
-    if (!vars.arrays.empty()) {
-        out <<
-            "mechanism_field_table field_table() override {\n" << indent <<
-            "return {" << indent;
-
-        sep.reset();
-        for (const auto& array: vars.arrays) {
-            auto memb = array->name();
-            out << sep << "{" << quote(memb) << ", &pp_." << memb << "}";
-        }
-        out << popindent << "\n};" << popindent << "\n}\n";
-
-        out <<
-            "mechanism_field_default_table field_default_table() override {\n" << indent <<
-            "return {" << indent;
-
-        sep.reset();
-        for (const auto& array: vars.arrays) {
-            auto memb = array->name();
-            auto dflt = array->value();
-            if (!std::isnan(dflt)) {
-                out << sep << "{" << quote(memb) << ", " << as_c_double(dflt) << "}";
-            }
-        }
-        out << popindent << "\n};" << popindent << "\n}\n";
-
-        out <<
-            "mechanism_state_table state_table() override {\n" << indent <<
-            "return {" << indent;
-
-        sep.reset();
-        for (const auto& array: vars.arrays) {
-            auto memb = array->name();
-            if(array->is_state()) {
-                out << sep << "{" << quote(memb) << ", &pp_." << memb << "}";
-            }
-        }
-        out << popindent << "\n};" << popindent << "\n}\n";
-
-
-    }
-
-    if (!ion_deps.empty()) {
-        out <<
-            "mechanism_ion_state_table ion_state_table() override {\n" << indent <<
-            "return {" << indent;
-
-        sep.reset();
-        for (const auto& dep: ion_deps) {
-            out << sep << "{\"" << dep.name << "\", &pp_." << ion_state_field(dep.name) << "}";
-        }
-        out << popindent << "\n};" << popindent << "\n}\n";
-
-        sep.reset();
-        out << "mechanism_ion_index_table ion_index_table() override {\n" << indent << "return {" << indent;
-        for (const auto& dep: ion_deps) {
-            out << sep << "{\"" << dep.name << "\", &pp_." << ion_state_index(dep.name) << "}";
-        }
-        out << popindent << "\n};" << popindent << "\n}\n";
-    }
-
-    out << popindent << "\n"
-        "private:\n" << indent <<
-        make_ppack_name(name) << " pp_;\n" << popindent <<
-        "};\n\n"
-        "template <typename B> ::arb::concrete_mech_ptr<B> make_mechanism_" << name << "();\n"
-        "template <> ::arb::concrete_mech_ptr<::arb::gpu::backend> make_mechanism_" << name << "<::arb::gpu::backend>() {\n" << indent <<
-        "return ::arb::concrete_mech_ptr<::arb::gpu::backend>(new " << class_name << "());\n" << popindent <<
-        "}\n\n";
-
-    out << namespace_declaration_close(ns_components);
+    out << fmt::format(FMT_COMPILE("extern \"C\" {{\n"
+				   "  arb_mechanism_interface* make_{4}_{1}_interface_gpu() {{\n"
+                                   "    static arb_mechanism_interface result;\n"
+                                   "    result.backend={2};\n"
+                                   "    result.alignment=1;\n"
+                                   "    result.init_mechanism=(arb_mechanism_method){3}{0}_init_;\n"
+                                   "    result.compute_currents=(arb_mechanism_method){3}{0}_compute_currents_;\n"
+                                   "    result.apply_events=(arb_mechanism_method){3}{0}_apply_events_;\n"
+                                   "    result.advance_state=(arb_mechanism_method){3}{0}_advance_state_;\n"
+                                   "    result.write_ions=(arb_mechanism_method){3}{0}_write_ions_;\n"
+                                   "    result.post_event=(arb_mechanism_method){3}{0}_post_event_;\n"
+                                   "    return &result;\n"
+				   "  }}\n"
+                                   "}};\n\n"),
+                       class_name,
+                       name,
+                       "arb_backend_kind_gpu",
+                       ss.str(),
+                       std::regex_replace(opt.cpp_namespace, std::regex{"::"}, "_"));
+    EXIT(out);
     return out.str();
 }
 
 std::string emit_gpu_cu_source(const Module& module_, const printer_options& opt) {
     std::string name = module_.module_name();
     std::string class_name = make_class_name(name);
-    std::string ppack_name = make_ppack_name(name);
+
     auto ns_components = namespace_components(opt.cpp_namespace);
+
     const bool is_point_proc = module_.kind() == moduleKind::point;
 
     APIMethod* net_receive_api = find_api_method(module_, "net_rec_api");
-    APIMethod* post_event_api = find_api_method(module_, "post_event_api");
-    APIMethod* init_api = find_api_method(module_, "init");
-    APIMethod* state_api = find_api_method(module_, "advance_state");
-    APIMethod* current_api = find_api_method(module_, "compute_currents");
-    APIMethod* write_ions_api = find_api_method(module_, "write_ions");
+    APIMethod* post_event_api  = find_api_method(module_, "post_event_api");
+    APIMethod* init_api        = find_api_method(module_, "init");
+    APIMethod* state_api       = find_api_method(module_, "advance_state");
+    APIMethod* current_api     = find_api_method(module_, "compute_currents");
+    APIMethod* write_ions_api  = find_api_method(module_, "write_ions");
 
-    assert_has_scope(init_api, "init");
-    assert_has_scope(state_api, "advance_state");
+    assert_has_scope(init_api,    "init");
+    assert_has_scope(state_api,   "advance_state");
     assert_has_scope(current_api, "compute_currents");
 
     io::pfxstringstream out;
 
-    out <<
-        "#include <iostream>\n"
-        "#include <" << arb_private_header_prefix() << "backends/event.hpp>\n"
-        "#include <" << arb_private_header_prefix() << "backends/multi_event_stream_state.hpp>\n"
-        "#include <" << arb_private_header_prefix() << "backends/gpu/gpu_common.hpp>\n"
-        "#include <" << arb_private_header_prefix() << "backends/gpu/math_cu.hpp>\n"
-        "#include <arbor/mechanism.hpp>\n" <<
-        "#include <arbor/mechanism_ppack.hpp>\n";
+    auto vars = local_module_variables(module_);
 
-    is_point_proc && out <<
-        "#include <" << arb_private_header_prefix() << "backends/gpu/reduce_by_key.hpp>\n";
+    out << "#include <arbor/gpu/gpu_common.hpp>\n"
+           "#include <arbor/gpu/math_cu.hpp>\n"
+           "#include <arbor/gpu/reduce_by_key.hpp>\n"
+           "#include <arbor/mechanism_abi.h>\n";
 
     out << "\n" << namespace_declaration_open(ns_components) << "\n";
 
-    emit_common_defs(out, module_);
+    out << fmt::format(FMT_COMPILE("#define PPACK_IFACE_BLOCK \\\n"
+                                   "auto  {0}width             __attribute__((unused)) = params_.width;\\\n"
+                                   "auto  {0}n_detectors       __attribute__((unused)) = params_.n_detectors;\\\n"
+                                   "auto* {0}vec_ci            __attribute__((unused)) = params_.vec_ci;\\\n"
+                                   "auto* {0}vec_di            __attribute__((unused)) = params_.vec_di;\\\n"
+                                   "auto* {0}vec_t             __attribute__((unused)) = params_.vec_t;\\\n"
+                                   "auto* {0}vec_dt            __attribute__((unused)) = params_.vec_dt;\\\n"
+                                   "auto* {0}vec_v             __attribute__((unused)) = params_.vec_v;\\\n"
+                                   "auto* {0}vec_i             __attribute__((unused)) = params_.vec_i;\\\n"
+                                   "auto* {0}vec_g             __attribute__((unused)) = params_.vec_g;\\\n"
+                                   "auto* {0}temperature_degC  __attribute__((unused)) = params_.temperature_degC;\\\n"
+                                   "auto* {0}diam_um           __attribute__((unused)) = params_.diam_um;\\\n"
+                                   "auto* {0}time_since_spike  __attribute__((unused)) = params_.time_since_spike;\\\n"
+                                   "auto* {0}node_index        __attribute__((unused)) = params_.node_index;\\\n"
+                                   "auto* {0}multiplicity      __attribute__((unused)) = params_.multiplicity;\\\n"
+                                   "auto* {0}state_vars        __attribute__((unused)) = params_.state_vars;\\\n"
+                                   "auto* {0}weight            __attribute__((unused)) = params_.weight;\\\n"
+                                   "auto& {0}events            __attribute__((unused)) = params_.events;\\\n"
+                                   "auto& {0}mechanism_id      __attribute__((unused)) = params_.mechanism_id;\\\n"
+                                   "auto& {0}index_constraints __attribute__((unused)) = params_.index_constraints;\\\n"),
+                       pp_var_pfx);
+    auto global = 0;
+    for (const auto& scalar: vars.scalars) {
+        out << fmt::format("auto {}{} __attribute__((unused)) = params_.globals[{}];\\\n", pp_var_pfx, scalar->name(), global);
+        global++;
+    }
+    auto param = 0, state = 0;
+    for (const auto& array: vars.arrays) {
+        if (array->is_state()) {
+            out << fmt::format("auto* {}{} __attribute__((unused)) = params_.state_vars[{}];\\\n", pp_var_pfx, array->name(), state);
+            state++;
+        }
+    }
+    for (const auto& array: vars.arrays) {
+        if (!array->is_state()) {
+            out << fmt::format("auto* {}{} __attribute__((unused)) = params_.parameters[{}];\\\n", pp_var_pfx, array->name(), param);
+            param++;
+        }
+    }
+    auto idx = 0;
+    for (const auto& ion: module_.ion_deps()) {
+        out << fmt::format("auto& {}{} __attribute__((unused)) = params_.ion_states[{}];\\\n",       pp_var_pfx, ion_field(ion), idx);
+        out << fmt::format("auto* {}{} __attribute__((unused)) = params_.ion_states[{}].index;\\\n", pp_var_pfx, ion_index(ion), idx);
+        idx++;
+    }
+    out << "//End of IFACEBLOCK\n\n";
 
     // Print the CUDA code and kernels:
     //  - first __device__ functions that implement NMODL PROCEDUREs.
     //  - then __global__ kernels that implement API methods and call the procedures.
 
-    out << "namespace {\n\n"; // place inside an anonymous namespace
-
-    out << "using ::arb::gpu::exprelr;\n";
-    out << "using ::arb::gpu::safeinv;\n";
-    out << "using ::arb::gpu::min;\n";
-    out << "using ::arb::gpu::max;\n\n";
+    out << "namespace {\n\n" // place inside an anonymous namespace
+        << "using ::arb::gpu::exprelr;\n"
+        << "using ::arb::gpu::safeinv;\n"
+        << "using ::arb::gpu::min;\n"
+        << "using ::arb::gpu::max;\n\n";
 
     // Procedures as __device__ functions.
     auto emit_procedure_kernel = [&] (ProcedureExpression* e) {
-        out << "__device__\n"
-            << "void " << e->name()
-            << "(" << ppack_name << " params_, int tid_";
-        for(auto& arg: e->args()) {
-            out << ", ::arb::fvm_value_type " << arg->is_argument()->name();
-        }
+        out << fmt::format("__device__\n"
+                           "void {}(arb_mechanism_ppack params_, int tid_",
+                           e->name());
+        for(auto& arg: e->args()) out << ", arb_value_type " << arg->is_argument()->name();
         out << ") {\n" << indent
+            << "PPACK_IFACE_BLOCK;\n"
             << cuprint(e->body())
             << popindent << "}\n\n";
     };
@@ -285,8 +200,8 @@ std::string emit_gpu_cu_source(const Module& module_, const printer_options& opt
         // Only print the kernel if the method is not empty.
         if (!e->body()->statements().empty()) {
             out << "__global__\n"
-                << "void " << e->name() << "(" << ppack_name << " params_) {\n" << indent
-                << "int n_ = params_.width_;\n"
+                << "void " << e->name() << "(arb_mechanism_ppack params_) {\n" << indent
+                << "int n_ = params_.width;\n"
                 << "int tid_ = threadIdx.x + blockDim.x*blockIdx.x;\n";
             emit_api_body_cu(out, e, is_point_proc);
             out << popindent << "}\n\n";
@@ -294,131 +209,129 @@ std::string emit_gpu_cu_source(const Module& module_, const printer_options& opt
     };
 
     emit_api_kernel(init_api);
+    if (init_api && !init_api->body()->statements().empty()) {
+        out << fmt::format(FMT_COMPILE("__global__\n"
+                                       "void multiply(arb_mechanism_ppack params_) {{\n"
+                                       "    PPACK_IFACE_BLOCK;\n"
+                                       "    auto tid_ = threadIdx.x + blockDim.x*blockIdx.x;\n"
+                                       "    auto idx_ = blockIdx.y;"
+                                       "    if(tid_<{0}width) {{\n"
+                                       "        {0}state_vars[idx_][tid_] *= {0}multiplicity[tid_];\n"
+                                       "    }}\n"
+                                       "}}\n\n"),
+                           pp_var_pfx);
+    }
     emit_api_kernel(state_api);
     emit_api_kernel(current_api);
     emit_api_kernel(write_ions_api);
 
     // event delivery
     if (net_receive_api) {
-        const std::string weight_arg = net_receive_api->args().empty() ? "weight" : net_receive_api->args().front()->is_argument()->name();
-        out << "__global__\n"
-            << "void apply_events(int mech_id_, " <<  ppack_name << " params_, "
-            << "deliverable_event_stream_state events) {\n" << indent
-            << "auto tid_ = threadIdx.x + blockDim.x*blockIdx.x;\n"
-            << "auto const ncell_ = events.n;\n\n"
-
-            << "if(tid_<ncell_) {\n" << indent
-            << "auto begin = events.ev_data+events.begin_offset[tid_];\n"
-            << "auto end = events.ev_data+events.end_offset[tid_];\n"
-            << "for (auto p = begin; p<end; ++p) {\n" << indent
-            << "if (p->mech_id==mech_id_) {\n" << indent
-            << "auto tid_ = p->mech_index;\n"
-            << "auto " << weight_arg << " = p->weight;\n";
-            emit_api_body_cu(out, net_receive_api, is_point_proc, false);
-            out << popindent << "}\n"
-            << popindent << "}\n"
-            << popindent << "}\n"
-            << popindent << "}\n";
+        out << fmt::format(FMT_COMPILE("__global__\n"
+                                       "void apply_events(arb_mechanism_ppack params_) {{\n"
+                                       "    PPACK_IFACE_BLOCK;\n"
+                                       "    auto tid_ = threadIdx.x + blockDim.x*blockIdx.x;\n"
+                                       "    if(tid_<{1}events.n_streams) {{\n"
+                                       "        auto begin = {1}events.events + {1}events.begin[tid_];\n"
+                                       "        auto end   = {1}events.events + {1}events.end[tid_];\n"
+                                       "        for (auto p = begin; p<end; ++p) {{\n"
+                                       "            if (p->mech_id=={1}mechanism_id) {{\n"
+                                       "                auto tid_ = p->mech_index;\n"
+                                       "                auto {0} = p->weight;\n"),
+                           net_receive_api->args().empty() ? "weight" : net_receive_api->args().front()->is_argument()->name(),
+                           pp_var_pfx);
+        out << indent << indent << indent << indent;
+        emit_api_body_cu(out, net_receive_api, is_point_proc, false, false);
+        out << popindent << "}\n" << popindent << "}\n" << popindent << "}\n" << popindent << "}\n";
     }
 
     // event delivery
     if (post_event_api) {
         const std::string time_arg = post_event_api->args().empty() ? "time" : post_event_api->args().front()->is_argument()->name();
-        out << "__global__\n"
-            << "void post_event(" <<  ppack_name << " params_) {\n" << indent
-            << "int n_ = params_.width_;\n"
-            << "auto tid_ = threadIdx.x + blockDim.x*blockIdx.x;\n"
-            << "if (tid_<n_) {\n" << indent
-            << "auto node_index_i_ = params_.node_index_[tid_];\n"
-            << "auto cid_ = params_.vec_ci_[node_index_i_];\n"
-            << "auto offset_ = params_.n_detectors_ * cid_;\n"
-            << "for (unsigned c = 0; c < params_.n_detectors_; c++) {\n" << indent
-            << "auto " << time_arg << " = params_.time_since_spike_[offset_ + c];\n"
-            << "if (" <<  time_arg << " >= 0) {\n" << indent;
-            emit_api_body_cu(out, post_event_api, is_point_proc, false);
-            out << popindent << "}\n"
-            << popindent << "}\n"
-            << popindent << "}\n"
-            << popindent << "}\n";
+        out << fmt::format(FMT_COMPILE("__global__\n"
+                                       "void post_event(arb_mechanism_ppack params_) {{\n"
+                                       "    PPACK_IFACE_BLOCK;\n"
+                                       "    auto tid_ = threadIdx.x + blockDim.x*blockIdx.x;\n"
+                                       "    if (tid_<{1}width) {{\n"
+                                       "        auto node_index_i_ = {1}node_index[tid_];\n"
+                                       "        auto cid_ = {1}vec_ci[node_index_i_];\n"
+                                       "        auto offset_ = {1}n_detectors * cid_;\n"
+                                       "        for (unsigned c = 0; c < {1}n_detectors; c++) {{\n"
+                                       "            auto {0} = {1}time_since_spike[offset_ + c];\n"
+                                       "            if ({0} >= 0) {{\n"),
+                           time_arg,
+                           pp_var_pfx);
+        out << indent << indent << indent << indent;
+        emit_api_body_cu(out, post_event_api, is_point_proc, false, false);
+        out << popindent << "}\n" << popindent << "}\n" << popindent << "}\n" << popindent << "}\n";
     }
 
-    out << "} // namspace\n\n"; // close anonymous namespace
+    out << "} // namespace\n\n"; // close anonymous namespace
 
     // Write wrappers.
-    auto emit_api_wrapper = [&] (APIMethod* e) {
-        out << "void " << class_name << "_" << e->name() << "_(" << ppack_name << "& p) {";
-
-        // Only call the kernel if the kernel is required.
-        !e->body()->statements().empty() && out
-            << "\n" << indent
-            << "auto n = p.width_;\n"
-            << "unsigned block_dim = 128;\n"
-            << "unsigned grid_dim = ::arb::gpu::impl::block_count(n, block_dim);\n"
-            << e->name() << "<<<grid_dim, block_dim>>>(p);\n"
-            << popindent;
-
+    auto emit_api_wrapper = [&] (APIMethod* e, const auto& width, std::string_view name="") {
+        auto api_name = name.empty() ? e->name() : name;
+        out << fmt::format(FMT_COMPILE("void {}_{}_(arb_mechanism_ppack* p) {{"), class_name, api_name);
+        if(!e->body()->statements().empty()) {
+            out << fmt::format(FMT_COMPILE("\n"
+                                           "    auto n = p->{};\n"
+                                           "    unsigned block_dim = 128;\n"
+                                           "    unsigned grid_dim = ::arb::gpu::impl::block_count(n, block_dim);\n"
+                                           "    {}<<<grid_dim, block_dim>>>(*p);\n"),
+                               width,
+                               api_name);
+        }
         out << "}\n\n";
     };
-    emit_api_wrapper(init_api);
-    emit_api_wrapper(current_api);
-    emit_api_wrapper(state_api);
-    emit_api_wrapper(write_ions_api);
 
-    net_receive_api && out
-        << "void " << class_name << "_apply_events_("
-        << "int mech_id, "
-        << ppack_name << "& p, deliverable_event_stream_state events) {\n" << indent
-        << "auto n = events.n;\n"
-        << "unsigned block_dim = 128;\n"
-        << "unsigned grid_dim = ::arb::gpu::impl::block_count(n, block_dim);\n"
-        << "apply_events<<<grid_dim, block_dim>>>(mech_id, p, events);\n"
-        << popindent << "}\n\n";
+    auto emit_empty_wrapper = [&] (std::string_view name) {
+        out << fmt::format(FMT_COMPILE("void {}_{}_(arb_mechanism_ppack* p) {{}}\n"), class_name, name);
+    };
 
-    post_event_api && out
-        << "void " << class_name << "_post_event_("
-        << ppack_name << "& p) {\n" << indent
-        << "auto n = p.width_;\n"
-        << "unsigned block_dim = 128;\n"
-        << "unsigned grid_dim = ::arb::gpu::impl::block_count(n, block_dim);\n"
-        << "post_event<<<grid_dim, block_dim>>>(p);\n"
-        << popindent << "}\n\n";
 
+    {
+        auto api_name = init_api->name();
+        auto n = std::count_if(vars.arrays.begin(), vars.arrays.end(),
+                               [] (const auto& v) { return v->is_state(); });
+
+        out << fmt::format(FMT_COMPILE("void {}_{}_(arb_mechanism_ppack* p) {{"), class_name, api_name);
+        if(!init_api->body()->statements().empty()) {
+            out << fmt::format(FMT_COMPILE("\n"
+                                           "    auto n = p->{0};\n"
+                                           "    unsigned block_dim = 128;\n"
+                                           "    unsigned grid_dim = ::arb::gpu::impl::block_count(n, block_dim);\n"
+                                           "    {1}<<<grid_dim, block_dim>>>(*p);\n"
+                                           "    if (!p->multiplicity) return;\n"
+                                           "    multiply<<<{{grid_dim, {2}}}, block_dim>>>(*p);\n"),
+                               "width",
+                               api_name,
+                               n);
+        }
+        out << "}\n\n";
+    }
+
+    emit_api_wrapper(current_api,     "width");
+    emit_api_wrapper(state_api,       "width");
+    emit_api_wrapper(write_ions_api,  "width");
+    if (post_event_api) {
+        emit_api_wrapper(post_event_api, "width", "post_event");
+    } else {
+        emit_empty_wrapper("post_event");
+    }
+    if (net_receive_api) {
+        emit_api_wrapper(net_receive_api, "events.n_streams", "apply_events");
+    } else {
+        emit_empty_wrapper("apply_events");
+    }
     out << namespace_declaration_close(ns_components);
     return out.str();
-}
-
-void emit_common_defs(std::ostream& out, const Module& module_) {
-    std::string class_name = make_class_name(module_.module_name());
-    std::string ppack_name = make_ppack_name(module_.module_name());
-
-    auto vars = local_module_variables(module_);
-    auto ion_deps = module_.ion_deps();
-
-    find_net_receive(module_) && out <<
-        "using deliverable_event_stream_state =\n"
-        "    ::arb::multi_event_stream_state<::arb::deliverable_event_data>;\n\n";
-
-    out << "struct " << ppack_name << ": ::arb::mechanism_ppack {\n" << indent;
-
-    for (const auto& scalar: vars.scalars) {
-        out << "::arb::fvm_value_type " << scalar->name() <<  " = " << as_c_double(scalar->value()) << ";\n";
-    }
-    for (const auto& array: vars.arrays) {
-        out << "::arb::fvm_value_type* " << array->name() << ";\n";
-    }
-    for (const auto& dep: ion_deps) {
-        out << "::arb::ion_state_view " << ion_state_field(dep.name) << ";\n";
-        out << "::arb::fvm_index_type* " << ion_state_index(dep.name) << ";\n";
-    }
-
-    out << popindent << "};\n\n";
 }
 
 static std::string index_i_name(const std::string& index_var) {
     return index_var+"i_";
 }
 
-void emit_api_body_cu(std::ostream& out, APIMethod* e, bool is_point_proc, bool cv_loop) {
+void emit_api_body_cu(std::ostream& out, APIMethod* e, bool is_point_proc, bool cv_loop, bool ppack) {
     auto body = e->body();
     auto indexed_vars = indexed_locals(e->scope());
 
@@ -456,12 +369,12 @@ void emit_api_body_cu(std::ostream& out, APIMethod* e, bool is_point_proc, bool 
                 out << "unsigned lane_mask_ = arb::gpu::ballot(0xffffffff, tid_<n_);\n";
             }
         }
-
+        ppack && out << "PPACK_IFACE_BLOCK;\n";
         cv_loop && out << "if (tid_<n_) {\n" << indent;
 
         for (auto& index: indices) {
             out << "auto " << index_i_name(index.source_var)
-                << " = params_." << index.source_var << "[" << index.index_name << "];\n";
+                << " = " << pp_var_pfx << index.source_var << "[" << index.index_name << "];\n";
         }
 
         for (auto& sym: indexed_vars) {
@@ -490,14 +403,14 @@ namespace {
         deref(indexed_variable_info v): v(v) {}
         friend std::ostream& operator<<(std::ostream& o, const deref& wrap) {
             auto index_var = wrap.v.cell_index_var.empty() ? wrap.v.node_index_var : wrap.v.cell_index_var;
-            return o << "params_." << wrap.v.data_var << '['
+            return o << pp_var_pfx << wrap.v.data_var << '['
                      << (wrap.v.scalar()? "0": index_i_name(index_var)) << ']';
         }
     };
 }
 
 void emit_state_read_cu(std::ostream& out, LocalVariable* local) {
-    out << "::arb::fvm_value_type " << cuprint(local) << " = ";
+    out << "arb_value_type " << cuprint(local) << " = ";
 
     if (local->is_read()) {
         auto d = decode_indexed_variable(local->external_variable());
@@ -513,8 +426,7 @@ void emit_state_read_cu(std::ostream& out, LocalVariable* local) {
 
 
 void emit_state_update_cu(std::ostream& out, Symbol* from,
-                          IndexedVariable* external, bool is_point_proc)
-{
+                          IndexedVariable* external, bool is_point_proc) {
     if (!external->is_write()) return;
 
     auto d = decode_indexed_variable(external);
@@ -528,16 +440,16 @@ void emit_state_update_cu(std::ostream& out, Symbol* from,
         out << "::arb::gpu::reduce_by_key(";
         if (coeff != 1) out << as_c_double(coeff) << '*';
 
-        out << "params_.weight_[tid_]*" << from->name() << ',';
+        out << pp_var_pfx << "weight[tid_]*" << from->name() << ',';
 
         auto index_var = d.cell_index_var.empty() ? d.node_index_var : d.cell_index_var;
-        out << "params_." << d.data_var << ", " << index_i_name(index_var) << ", lane_mask_);\n";
+        out << pp_var_pfx << d.data_var << ", " << index_i_name(index_var) << ", lane_mask_);\n";
     }
     else if (d.accumulate) {
         out << deref(d) << " = fma(";
         if (coeff != 1) out << as_c_double(coeff) << '*';
 
-        out << "params_.weight_[tid_], " << from->name() << ", " << deref(d) << ");\n";
+        out << pp_var_pfx << "weight[tid_], " << from->name() << ", " << deref(d) << ");\n";
     }
     else {
         out << deref(d) << " = ";
@@ -550,7 +462,7 @@ void emit_state_update_cu(std::ostream& out, Symbol* from,
 // CUDA Printer visitors
 
 void GpuPrinter::visit(VariableExpression *sym) {
-    out_ << "params_." << sym->name() << (sym->is_range()? "[tid_]": "");
+    out_ << pp_var_pfx << sym->name() << (sym->is_range()? "[tid_]": "");
 }
 
 void GpuPrinter::visit(CallExpression* e) {

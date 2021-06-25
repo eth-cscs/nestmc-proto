@@ -85,6 +85,7 @@ endforeach()
 
 set(unit_sources
     ../common_cells.cpp
+    test_abi.cpp
     test_asc.cpp
     test_any_cast.cpp
     test_any_ptr.cpp
@@ -215,11 +216,23 @@ if(${CMAKE_POSITION_INDEPENDENT_CODE})
     SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/dummy"
     OUTPUT "CAT_DUMMY_SOURCES"
     MECHS dummy
+    PREFIX "${PROJECT_SOURCE_DIR}/mechanisms"
     CXX_FLAGS_TARGET ${ARB_CXX_FLAGS_TARGET_FULL}
-    ARBOR "${PROJECT_SOURCE_DIR}"
     STANDALONE ON
-    VERBOSE OFF)
+    VERBOSE ON)
   target_compile_definitions(unit PRIVATE USE_DYNAMIC_CATALOGUES)
+  if(ARB_WITH_NVCC)
+    target_compile_options(dummy-catalogue PRIVATE -DARB_CUDA)
+  endif()
+  if(ARB_WITH_CUDA_CLANG)
+    set(clang_options_ -DARB_CUDA -xcuda --cuda-gpu-arch=sm_60 --cuda-path=${CUDA_TOOLKIT_ROOT_DIR})
+    target_compile_options(unit PRIVATE $<$<COMPILE_LANGUAGE:CXX>:${clang_options_}>)
+  endif()
+
+  if(ARB_WITH_HIP_CLANG)
+    set(clang_options_ -DARB_HIP -xhip --amdgpu-target=gfx906 --amdgpu-target=gfx900)
+    target_compile_options(unit PRIVATE $<$<COMPILE_LANGUAGE:CXX>:${clang_options_}>)
+  endif()
   add_dependencies(unit dummy-catalogue)
 endif()
 

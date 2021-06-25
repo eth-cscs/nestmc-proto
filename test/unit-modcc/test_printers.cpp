@@ -124,11 +124,11 @@ TEST(CPrinter, proc_body) {
             "    htau = 1500\n"
             "}"
             ,
-            "::arb::fvm_value_type k;\n"
-            "pp->minf[i_] = 1.0-1.0/(1.0+exp((v-k)/k));\n"
-            "pp->hinf[i_] = 1.0/(1.0+exp((v-k)/k));\n"
-            "pp->mtau[i_] = 0.5;\n"
-            "pp->htau[i_] = 1500.0;\n"
+            "arb_value_type k;\n"
+            "_pp_var_minf[i_] = 1.0-1.0/(1.0+exp((v-k)/k));\n"
+            "_pp_var_hinf[i_] = 1.0/(1.0+exp((v-k)/k));\n"
+            "_pp_var_mtau[i_] = 0.5;\n"
+            "_pp_var_htau[i_] = 1500.0;\n"
         }
     };
 
@@ -167,7 +167,7 @@ TEST(CPrinter, proc_body_const) {
                     "    mtau = 0.5 - t0 + t1\n"
                     "}"
                     ,
-                    "pp->mtau[i_] = 0.5 - -0.5 + 1.2;\n"
+                    "_pp_var_mtau[i_] = 0.5 - -0.5 + 1.2;\n"
             }
     };
 
@@ -204,27 +204,27 @@ TEST(CPrinter, proc_body_inlined) {
         "r_6_ = 0.;\n"
         "r_7_ = 0.;\n"
         "r_8_ = 0.;\n"
-        "r_9_=pp->s2[i_]*0.33333333333333331;\n"
-        "r_8_=pp->s1[i_]+2.0;\n"
-        "if(pp->s1[i_]==3.0){\n"
+        "r_9_=_pp_var_s2[i_]*0.33333333333333331;\n"
+        "r_8_=_pp_var_s1[i_]+2.0;\n"
+        "if(_pp_var_s1[i_]==3.0){\n"
         "   r_7_=2.0*r_8_;\n"
         "}\n"
         "else{\n"
-        "   if(pp->s1[i_]==4.0){\n"
+        "   if(_pp_var_s1[i_]==4.0){\n"
         "       r_11_ = 0.;\n"
         "       r_12_ = 0.;\n"
-        "       r_12_=6.0+pp->s1[i_];\n"
+        "       r_12_=6.0+_pp_var_s1[i_];\n"
         "       r_11_=r_12_;\n"
         "       r_7_=r_8_*r_11_;\n"
         "   }\n"
         "   else{\n"
         "       r_10_=exp(r_8_);\n"
-        "       r_7_=r_10_*pp->s1[i_];\n"
+        "       r_7_=r_10_*_pp_var_s1[i_];\n"
         "   }\n"
         "}\n"
         "r_13_=0.;\n"
         "r_14_=0.;\n"
-        "r_14_=r_9_/pp->s2[i_];\n"
+        "r_14_=r_9_/_pp_var_s2[i_];\n"
         "r_15_=log(r_14_);\n"
         "r_13_=42.0*r_15_;\n"
         "r_6_=r_9_*r_13_;\n"
@@ -247,7 +247,7 @@ TEST(CPrinter, proc_body_inlined) {
         "       t2=r_16_*ll0_;\n"
         "   }\n"
         "}\n"
-        "pp->s2[i_]=t2+4.0;\n";
+        "_pp_var_s2[i_]=t2+4.0;\n";
 
     Module m(io::read_all(DATADIR "/mod_files/test6.mod"), "test6.mod");
     Parser p(m, false);
@@ -280,22 +280,22 @@ TEST(SimdPrinter, simd_if_else) {
             "simd_mask mask_0_ = S::cmp_gt(i, (double)2.0);\n"
             "S::where(mask_0_,u) = (double)7.0;\n"
             "S::where(S::logical_not(mask_0_),u) = (double)5.0;\n"
-            "indirect(pp->s+i_, simd_width_) = S::where(S::logical_not(mask_0_),simd_cast<simd_value>((double)42.0));\n"
-            "indirect(pp->s+i_, simd_width_) = u;"
+            "indirect(_pp_var_s+i_, simd_width_) = S::where(S::logical_not(mask_0_),simd_cast<simd_value>((double)42.0));\n"
+            "indirect(_pp_var_s+i_, simd_width_) = u;"
             ,
             "simd_value u;\n"
             "simd_mask mask_1_ = S::cmp_gt(i, (double)2.0);\n"
             "S::where(mask_1_,u) = (double)7.0;\n"
             "S::where(S::logical_not(mask_1_),u) = (double)5.0;\n"
-            "indirect(pp->s+i_, simd_width_) = S::where(S::logical_and(S::logical_not(mask_1_), mask_input_),simd_cast<simd_value>((double)42.0));\n"
-            "indirect(pp->s+i_, simd_width_) = S::where(mask_input_, u);"
+            "indirect(_pp_var_s+i_, simd_width_) = S::where(S::logical_and(S::logical_not(mask_1_), mask_input_),simd_cast<simd_value>((double)42.0));\n"
+            "indirect(_pp_var_s+i_, simd_width_) = S::where(mask_input_, u);"
             ,
-            "simd_mask mask_2_ = S::cmp_gt(simd_cast<simd_value>(indirect(pp->g+i_, simd_width_)), (double)2.0);\n"
-            "simd_mask mask_3_ = S::cmp_gt(simd_cast<simd_value>(indirect(pp->g+i_, simd_width_)), (double)3.0);\n"
+            "simd_mask mask_2_ = S::cmp_gt(simd_cast<simd_value>(indirect(_pp_var_g+i_, simd_width_)), (double)2.0);\n"
+            "simd_mask mask_3_ = S::cmp_gt(simd_cast<simd_value>(indirect(_pp_var_g+i_, simd_width_)), (double)3.0);\n"
             "S::where(S::logical_and(mask_2_,mask_3_),i) = (double)0.;\n"
             "S::where(S::logical_and(mask_2_,S::logical_not(mask_3_)),i) = (double)1.0;\n"
-            "simd_mask mask_4_ = S::cmp_lt(simd_cast<simd_value>(indirect(pp->g+i_, simd_width_)), (double)1.0);\n"
-            "indirect(pp->s+i_, simd_width_) = S::where(S::logical_and(S::logical_not(mask_2_),mask_4_),simd_cast<simd_value>((double)2.0));\n"
+            "simd_mask mask_4_ = S::cmp_lt(simd_cast<simd_value>(indirect(_pp_var_g+i_, simd_width_)), (double)1.0);\n"
+            "indirect(_pp_var_s+i_, simd_width_) = S::where(S::logical_and(S::logical_not(mask_2_),mask_4_),simd_cast<simd_value>((double)2.0));\n"
             "rates(i_, S::logical_and(S::logical_not(mask_2_),S::logical_not(mask_4_)), i);"
     };
 

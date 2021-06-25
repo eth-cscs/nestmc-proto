@@ -31,11 +31,19 @@ set(modcc_sources modcc.cpp)
 
 add_library(libmodcc STATIC ${libmodcc_sources})
 target_include_directories(libmodcc PUBLIC .)
+target_include_directories(libmodcc PRIVATE ../ext/fmt/include)
+
 set_target_properties(libmodcc PROPERTIES OUTPUT_NAME modcc)
 
-add_executable(modcc ${modcc_sources})
-target_link_libraries(modcc libmodcc ext-tinyopt)
 
+add_executable(modcc ${modcc_sources})
+target_link_libraries(modcc PRIVATE libmodcc ext-tinyopt)
+if (ARB_USE_BUNDLED_FMT)
+    target_include_directories(modcc PRIVATE ../ext/fmt/include)
+else ()
+    find_package(fmt)
+    target_link_libraries(modcc PRIVATE fmt::fmt-header-only)
+endif ()
 set_target_properties(modcc libmodcc PROPERTIES EXCLUDE_FROM_ALL ${ARB_WITH_EXTERNAL_MODCC})
 
 if (NOT ARB_WITH_EXTERNAL_MODCC)

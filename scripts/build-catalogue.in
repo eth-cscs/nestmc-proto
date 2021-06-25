@@ -9,7 +9,7 @@ import shutil
 import stat
 import string
 import argparse
-
+import re
 def parse_arguments():
     def append_slash(s):
         return s+'/' if s and not s.endswith('/') else s
@@ -39,12 +39,6 @@ def parse_arguments():
                         type=str,
                         help='Catalogue name.')
 
-    parser.add_argument('-s', '--source',
-                        metavar='source',
-                        type=str,
-                        default=Path(__file__).parents[1].resolve(),
-                        help='Path to arbor sources; defaults to parent of this script\'s directory.')
-
     parser.add_argument('modpfx',
                         metavar='modpfx',
                         type=str,
@@ -66,12 +60,14 @@ def parse_arguments():
 
 args    = parse_arguments()
 pwd     = Path.cwd()
-name    = args['name']
+name    = re.sub(r'_+', r'_',
+                 re.sub(r'[^a-zA-Z0-9_]', r'_',
+                        args['name']))
+
 mod_dir = pwd / Path(args['modpfx'])
 mods    = [ f[:-4] for f in os.listdir(mod_dir) if f.endswith('.mod') ]
 verbose = args['verbose'] and not args['quiet']
 quiet   = args['quiet']
-arb     = args['source']
 
 cmake = f"""
 cmake_minimum_required(VERSION 3.9)
@@ -92,8 +88,8 @@ make_catalogue(
   SOURCES "${{CMAKE_CURRENT_SOURCE_DIR}}/mod"
   OUTPUT "CAT_{name.upper()}_SOURCES"
   MECHS {' '.join(mods)}
+  PREFIX @ARB_INSTALL_DATADIR@
   CXX_FLAGS_TARGET ${{ARB_CXX_FLAGS_TARGET}}
-  ARBOR {arb}
   STANDALONE ON
   VERBOSE {"ON" if verbose else "OFF"})
 """
@@ -110,8 +106,8 @@ with TemporaryDirectory() as tmp:
     os.chdir(tmp / 'build')
     with open(tmp / 'CMakeLists.txt', 'w') as fd:
         fd.write(cmake)
-    shutil.copy2(f'{arb}/mechanisms/BuildModules.cmake', tmp)
-    shutil.copy2(f'{arb}/mechanisms/generate_catalogue', tmp)
+    shutil.copy2(f'@ARB_INSTALL_DATADIR@/BuildModules.cmake', tmp)
+    shutil.copy2(f'@ARB_INSTALL_DATADIR@/generate_catalogue', tmp)
     sp.run('cmake ..', shell=True, check=True, capture_output=not verbose)
     sp.run('make',     shell=True, check=True, capture_output=not verbose)
     shutil.copy2(f'{name}-catalogue.so', pwd)

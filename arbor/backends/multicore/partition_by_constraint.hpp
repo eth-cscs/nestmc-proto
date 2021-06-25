@@ -73,21 +73,22 @@ index_constraint idx_constraint(It it, unsigned simd_width) {
 
 template <typename T>
 constraint_partition make_constraint_partition(const T& node_index, unsigned width, unsigned simd_width) {
-
     constraint_partition part;
-    for (unsigned i = 0; i < width; i+= simd_width) {
-        auto ptr = &node_index[i];
-        if (is_contiguous_n(ptr, simd_width)) {
-            part.contiguous.push_back(i);
-        }
-        else if (is_constant_n(ptr, simd_width)) {
-            part.constant.push_back(i);
-        }
-        else if (is_independent_n(ptr, simd_width)) {
-            part.independent.push_back(i);
-        }
-        else {
-            part.none.push_back(i);
+    if (simd_width) {
+        for (unsigned i = 0; i < width; i+= simd_width) {
+            auto ptr = &node_index[i];
+            if (is_contiguous_n(ptr, simd_width)) {
+                part.contiguous.push_back(i);
+            }
+            else if (is_constant_n(ptr, simd_width)) {
+                part.constant.push_back(i);
+            }
+            else if (is_independent_n(ptr, simd_width)) {
+                part.independent.push_back(i);
+            }
+            else {
+                part.none.push_back(i);
+            }
         }
     }
     return part;

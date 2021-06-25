@@ -5,8 +5,8 @@
 #include <backends/event.hpp>
 #include <backends/multi_event_stream_state.hpp>
 
-#include "gpu_api.hpp"
-#include "gpu_common.hpp"
+#include <arbor/gpu/gpu_api.hpp>
+#include <arbor/gpu/gpu_common.hpp>
 
 namespace arb {
 namespace gpu {

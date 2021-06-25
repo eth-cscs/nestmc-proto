@@ -3,6 +3,7 @@
 
 #include <arbor/constants.hpp>
 #include <arbor/fvm_types.hpp>
+#include <arbor/math.hpp>
 
 #include "backends/event.hpp"
 #include "backends/gpu/gpu_store_types.hpp"
@@ -12,6 +13,9 @@
 #include "memory/wrappers.hpp"
 #include "util/index_into.hpp"
 #include "util/rangeutil.hpp"
+#include "util/maputil.hpp"
+#include "util/range.hpp"
+#include "util/strprintf.hpp"
 
 using arb::memory::make_const_view;
 
@@ -203,6 +207,158 @@ shared_state::shared_state(
 {
     memory::fill(time_since_spike, -1.0);
     add_scalar(temperature_degC.size(), temperature_degC.data(), -273.15);
+}
+
+namespace {
+template<typename T>
+memory::const_host_view<T> std_view(const std::vector<T>& v) { return memory::const_host_view<T>{v.data(), v.size()}; }
+
+template<typename T>
+void append_chunk(const std::vector<T>& in, T*& out, T*& ptr, size_t n) {
+    memory::copy(std_view(in), memory::device_view<T>(ptr, n));
+    out = ptr;
+    ptr += n;
+};
+  
+template<typename T>
+void append_const(T in, T*& out, T*& ptr, size_t n) {
+    memory::fill(memory::device_view<T>(ptr, n), in);
+    out = ptr;
+    ptr += n;
+};
+  
+}
+
+void shared_state::set_parameter(mechanism& m, const std::string& key, const std::vector<arb_value_type>& values) {
+    if (values.size()!=m.ppack_.width) throw arbor_internal_error("mechanism parameter size mismatch");
+    auto field_ptr = m.field_data(key);
+    if (!field_ptr) throw arbor_internal_error(util::pprintf("no such mechanism parameter '{}'", key));
+    if (!m.ppack_.width) return;
+    assert (m.iface_.backend);
+    memory::copy(memory::make_const_view(values), memory::device_view<arb_value_type>(field_ptr, m.ppack_.width));
+}
+
+void shared_state::instantiate(mechanism& m, unsigned id, const mechanism_overrides& overrides, const mechanism_layout& pos_data) {
+    assert(m.iface_.backend == arb_backend_kind_gpu);
+    using util::make_range;
+    using util::make_span;
+    using util::ptr_by_key;
+    using util::value_by_key;
+
+    // Set internal variables
+    m.mult_in_place_ = !pos_data.multiplicity.empty();
+    m.num_ions_      = m.mech_.n_ions;
+    m.time_ptr_ptr   = &time_ptr;
+
+    auto alignment    = std::max(array::alignment(), iarray::alignment());
+    auto width        = pos_data.cv.size();
+    auto width_padded = math::round_up(pos_data.cv.size(), alignment);
+
+    // Assign non-owning views onto shared state:
+    m.ppack_ = {0};
+    m.ppack_.width            = width;
+    m.ppack_.mechanism_id     = id;
+    m.ppack_.vec_ci           = cv_to_cell.data();
+    m.ppack_.vec_di           = cv_to_intdom.data();
+    m.ppack_.vec_dt           = dt_cv.data();
+    m.ppack_.vec_v            = voltage.data();
+    m.ppack_.vec_i            = current_density.data();
+    m.ppack_.vec_g            = conductivity.data();
+    m.ppack_.temperature_degC = temperature_degC.data();
+    m.ppack_.diam_um          = diam_um.data();
+    m.ppack_.time_since_spike = time_since_spike.data();
+    m.ppack_.n_detectors      = n_detector;
+
+    // Allocate view pointers
+    m.state_vars_ = std::vector<arb_value_type*>(m.mech_.n_state_vars);
+    m.parameters_ = std::vector<arb_value_type*>(m.mech_.n_parameters);
+    m.ion_states_ = std::vector<arb_ion_state>(m.mech_.n_ions);
+    m.globals_    = std::vector<arb_value_type>(m.mech_.n_globals);
+
+    if (storage.find(id) != storage.end()) throw arb::arbor_internal_error("Duplicate mech id in shared state");
+    auto& store = storage[id];
+
+    // Set ion views
+    for (auto idx: make_span(m.mech_.n_ions)) {
+        auto ion = m.mech_.ions[idx].name;
+        auto ion_binding = value_by_key(overrides.ion_rebind, ion).value_or(ion);
+        ion_state* oion = ptr_by_key(ion_data, ion_binding);
+        if (!oion) throw arbor_internal_error("gpu/mechanism: mechanism holds ion with no corresponding shared state");
+        m.ion_states_[idx] = { oion->iX_.data(), oion->eX_.data(), oion->Xi_.data(), oion->Xo_.data(), oion->charge.data(), nullptr };
+    }
+
+    // If there are no sites (is this ever meaningful?) there is nothing more to do.
+    if (width==0) return;
+
+    // Allocate and initialize state and parameter vectors with default values.
+    {
+        // Allocate bulk storage
+        auto count    = (m.mech_.n_state_vars + m.mech_.n_parameters + 1)*width_padded + m.mech_.n_globals;
+        store.data_   = array(count, NAN);
+        auto base_ptr = store.data_.data();
+        // First sub-array of data_ is used for weight_
+        append_chunk(pos_data.weight, m.ppack_.weight, base_ptr, width);
+        // Set fields
+        for (auto idx: make_span(m.mech_.n_parameters)) {
+            append_const(m.mech_.parameters[idx].default_value, m.parameters_[idx], base_ptr, width);
+        }
+        for (auto idx: make_span(m.mech_.n_state_vars)) {
+            append_const(m.mech_.state_vars[idx].default_value, m.state_vars_[idx], base_ptr, width);
+        }
+        // Assign global scalar parameters. NB: Last chunk, since it breaks the width_padded alignment
+        for (auto idx: make_span(m.mech_.n_globals)) m.globals_[idx] = m.mech_.globals[idx].default_value;
+        for (auto& [k, v]: overrides.globals) {
+            auto found = false;
+            for (auto idx: make_span(m.mech_.n_globals)) {
+                if (m.mech_.globals[idx].name == k) {
+                    m.globals_[idx] = v;
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) throw arbor_internal_error(util::pprintf("gpu/mechanism: no such mechanism global '{}'", k));
+        }
+        memory::copy(std_view(m.globals_), memory::device_view<arb_value_type>(base_ptr, m.mech_.n_globals));
+        m.ppack_.globals = base_ptr;
+        base_ptr += m.mech_.n_globals;
+    }
+
+    // Allocate and initialize index vectors, viz. node_index_ and any ion indices.
+    {
+        // Allocate bulk storage
+        auto count     = (m.mult_in_place_ ? 1 : 0) + m.mech_.n_ions + 1;
+        store.indices_ = iarray(count*width_padded);
+        auto base_ptr  = store.indices_.data();
+        // Setup node indices
+        append_chunk(pos_data.cv, m.ppack_.node_index, base_ptr, width);
+        // Create ion indices
+        for (auto idx: make_span(m.mech_.n_ions)) {
+            auto  ion = m.mech_.ions[idx].name;
+            auto& index_ptr = m.ion_states_[idx].index;
+            // Index into shared_state respecting ion rebindings
+            auto ion_binding = value_by_key(overrides.ion_rebind, ion).value_or(ion);
+            ion_state* oion = ptr_by_key(ion_data, ion_binding);
+            if (!oion) throw arbor_internal_error("gpu/mechanism: mechanism holds ion with no corresponding shared state");
+            // Obtain index and move data
+            auto ni = memory::on_host(oion->node_index_);
+            auto indices = util::index_into(pos_data.cv, ni);
+            std::vector<arb_index_type> mech_ion_index(indices.begin(), indices.end());
+            append_chunk(mech_ion_index, index_ptr, base_ptr, width);
+        }
+
+        if (m.mult_in_place_) append_chunk(pos_data.multiplicity, m.ppack_.multiplicity, base_ptr, width);
+    }
+
+    // Shift data to GPU, set up pointers
+    store.parameters_d_ = memory::device_vector<arb_value_type*>(m.parameters_.size());
+    memory::copy(std_view(m.parameters_), store.parameters_d_);
+    m.ppack_.parameters = store.parameters_d_.data();
+    store.state_vars_d_ = memory::device_vector<arb_value_type*>(m.state_vars_.size());
+    memory::copy(std_view(m.state_vars_), store.state_vars_d_);
+    m.ppack_.state_vars = store.state_vars_d_.data();
+    store.ion_states_d_ = memory::device_vector<arb_ion_state>(m.ion_states_.size());
+    memory::copy(std_view(m.ion_states_), store.ion_states_d_);
+    m.ppack_.ion_states = store.ion_states_d_.data();
 }
 
 void shared_state::add_ion(

@@ -6,12 +6,16 @@
 #include <string>
 #include <vector>
 
+#include "io/ostream_wrappers.hpp"
 #include "blocks.hpp"
 #include "error.hpp"
 #include "expression.hpp"
 #include "module.hpp"
 
 std::vector<std::string> namespace_components(const std::string& qualified_namespace);
+
+// Can use this in a namespace. No __ allowed anywhere, neither _[A-Z], and in _global namespace_ _ followed by anything is verboten.
+const static std::string pp_var_pfx = "_pp_var_";
 
 inline const char* arb_header_prefix() {
     static const char* prefix = "arbor/";
@@ -53,9 +57,12 @@ struct namespace_declaration_close {
 // Enum representation:
 
 inline const char* module_kind_str(const Module& m) {
-    return m.kind()==moduleKind::density?
-        "::arb::mechanismKind::density":
-        "::arb::mechanismKind::point";
+    switch (m.kind()) {
+    case moduleKind::density: return "arb_mechanism_kind_density";            break;
+    case moduleKind::point:   return "arb_mechanism_kind_point";              break;
+    case moduleKind::revpot:  return "arb_mechanism_kind_reversal_potential"; break;
+    default: throw compiler_exception("Unknown module kind " + std::to_string((int)m.kind()));
+    }
 }
 
 // Check expression non-null and scoped, or else throw.
@@ -131,3 +138,16 @@ struct indexed_variable_info {
 };
 
 indexed_variable_info decode_indexed_variable(IndexedVariable* sym);
+
+template<typename C>
+size_t emit_array(std::ostream& out, const C& vars) {
+    auto n = 0ul;
+    io::separator sep("", ", ");
+    out << "{ ";
+    for (const auto& var: vars) {
+        out << sep << var;
+        ++n;
+    }
+    out << " }";
+    return n;
+}

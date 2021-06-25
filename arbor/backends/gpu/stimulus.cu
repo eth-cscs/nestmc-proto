@@ -1,10 +1,10 @@
 #include <cmath>
 
 #include <arbor/fvm_types.hpp>
+#include <arbor/gpu/gpu_api.hpp>
+#include <arbor/gpu/gpu_common.hpp>
+#include <arbor/gpu/math_cu.hpp>
 
-#include "backends/gpu/gpu_api.hpp"
-#include "backends/gpu/gpu_common.hpp"
-#include "backends/gpu/math_cu.hpp"
 #include "backends/gpu/stimulus.hpp"
 
 namespace arb {
@@ -55,7 +55,7 @@ void istim_add_current_impl(int n, istim_pp pp) {
 void istim_add_current_impl(int n, const istim_pp& pp) {
     constexpr unsigned block_dim = 128;
     const unsigned grid_dim = impl::block_count(n, block_dim);
-
+    if (!grid_dim) return;
     kernel::istim_add_current_impl<<<grid_dim, block_dim>>>(n, pp);
 }
 

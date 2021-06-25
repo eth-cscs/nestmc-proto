@@ -15,13 +15,13 @@
 #include <arbor/sampling.hpp>
 #include <arbor/simulation.hpp>
 #include <arbor/schedule.hpp>
+#include <arbor/mechanism.hpp>
 #include <arbor/string_literals.hpp>
 #include <arbor/util/any_ptr.hpp>
 
 #include <arborenv/concurrency.hpp>
 
 #include "backends/multicore/fvm.hpp"
-#include "backends/multicore/mechanism.hpp"
 #include "execution_context.hpp"
 #include "fvm_lowered_cell.hpp"
 #include "fvm_lowered_cell_impl.hpp"
@@ -66,25 +66,20 @@ arb::mechanism* find_mechanism(fvm_cell& fvcell, int index) {
 }
 
 // Access to mechanism-internal data:
-
-using mechanism_global_table = std::vector<std::pair<const char*, arb::fvm_value_type*>>;
-using mechanism_field_table = std::vector<std::pair<const char*, arb::fvm_value_type**>>;
-using mechanism_ion_index_table = std::vector<std::pair<const char*, arb::fvm_index_type**>>;
-
 ACCESS_BIND(\
-    mechanism_global_table (arb::concrete_mechanism<arb::multicore::backend>::*)(), \
+    arb::mechanism_global_table (arb::mechanism::*)(), \
     private_global_table_ptr,\
-    &arb::concrete_mechanism<arb::multicore::backend>::global_table)
+    &arb::mechanism::global_table)
 
 ACCESS_BIND(\
-    mechanism_field_table (arb::concrete_mechanism<arb::multicore::backend>::*)(),\
+    arb::mechanism_field_table (arb::mechanism::*)(), \
     private_field_table_ptr,\
-    &arb::concrete_mechanism<arb::multicore::backend>::field_table)
+    &arb::mechanism::field_table)
 
 ACCESS_BIND(\
-    mechanism_ion_index_table (arb::concrete_mechanism<arb::multicore::backend>::*)(),\
-    private_ion_index_table_ptr,\
-    &arb::concrete_mechanism<arb::multicore::backend>::ion_index_table)
+    arb::mechanism_ion_table (arb::mechanism::*)(), \
+    private_ion_table_ptr,\
+    &arb::mechanism::ion_table)
 
 using namespace arb;
 
@@ -511,12 +506,11 @@ TEST(fvm_lowered, derived_mechs) {
         for (auto& mech: fvcell.*private_mechanisms_ptr) {
             EXPECT_EQ("test_kin1"s, mech->internal_name());
 
-            auto cmech = dynamic_cast<multicore::mechanism*>(mech.get());
-            ASSERT_TRUE(cmech);
+            ASSERT_TRUE(mech);
 
-            auto opt_tau_ptr = util::value_by_key((cmech->*private_global_table_ptr)(), "tau"s);
+            auto opt_tau_ptr = util::value_by_key((mech.get()->*private_global_table_ptr)(), "tau"s);
             ASSERT_TRUE(opt_tau_ptr);
-            tau_values.push_back(*opt_tau_ptr.value());
+            tau_values.push_back(opt_tau_ptr.value());
         }
         util::sort(tau_values);
         EXPECT_EQ(fvec({10., 20.}), tau_values);
@@ -584,11 +578,11 @@ TEST(fvm_lowered, read_valence) {
         // test_ca_read_valence initialization should write ca ion valence
         // to state variable 'record_zca':
 
-        auto mech_ptr = dynamic_cast<multicore::mechanism*>(find_mechanism(fvcell, "test_ca_read_valence"));
+        auto mech_ptr = find_mechanism(fvcell, "test_ca_read_valence");
         auto opt_record_z_ptr = util::value_by_key((mech_ptr->*private_field_table_ptr)(), "record_z"s);
 
         ASSERT_TRUE(opt_record_z_ptr);
-        auto& record_z = *opt_record_z_ptr.value();
+        auto& record_z = opt_record_z_ptr.value().first;
         ASSERT_EQ(2.0, record_z[0]);
     }
 
@@ -609,11 +603,11 @@ TEST(fvm_lowered, read_valence) {
         fvm_cell fvcell(context);
         fvcell.initialize({0}, rec);
 
-        auto cr_mech_ptr = dynamic_cast<multicore::mechanism*>(find_mechanism(fvcell, 0));
+        auto cr_mech_ptr = find_mechanism(fvcell, 0);
         auto cr_opt_record_z_ptr = util::value_by_key((cr_mech_ptr->*private_field_table_ptr)(), "record_z"s);
 
         ASSERT_TRUE(cr_opt_record_z_ptr);
-        auto& cr_record_z = *cr_opt_record_z_ptr.value();
+        auto& cr_record_z = cr_opt_record_z_ptr.value().first;
         ASSERT_EQ(7.0, cr_record_z[0]);
     }
 }
@@ -647,8 +641,8 @@ TEST(fvm_lowered, ionic_concentrations) {
     ion_config.reset_econc.assign(ncv, 0.);
     ion_config.reset_iconc.assign(ncv, 2.3e-4);
 
-    auto read_cai  = cat.instance<backend>("read_cai_init");
-    auto write_cai = cat.instance<backend>("write_cai_breakpoint");
+    auto read_cai  = cat.instance(backend::kind, "read_cai_init");
+    auto write_cai = cat.instance(backend::kind, "write_cai_breakpoint");
 
     auto& read_cai_mech  = read_cai.mech;
     auto& write_cai_mech = write_cai.mech;
@@ -657,8 +651,8 @@ TEST(fvm_lowered, ionic_concentrations) {
             ncell, ncell, 0, cv_to_intdom, cv_to_intdom, gj, vinit, temp, diam, src_to_spike, read_cai_mech->data_alignment());
     shared_state->add_ion("ca", 2, ion_config);
 
-    read_cai_mech->instantiate(0, *shared_state, overrides, layout);
-    write_cai_mech->instantiate(1, *shared_state, overrides, layout);
+    shared_state->instantiate(*read_cai_mech, 0, overrides, layout);
+    shared_state->instantiate(*write_cai_mech, 1, overrides, layout);
 
     shared_state->reset();
 
@@ -853,15 +847,15 @@ TEST(fvm_lowered, weighted_write_ion) {
     std::vector<double> expected_init_iconc = {0.75*con_int, 1.*con_int, 0};
     EXPECT_TRUE(testing::seq_almost_eq<double>(expected_init_iconc, ion_init_iconc));
 
-    auto test_ca = dynamic_cast<multicore::mechanism*>(find_mechanism(fvcell, "test_ca"));
+    auto test_ca = find_mechanism(fvcell, "test_ca");
 
     auto opt_cai_ptr = util::value_by_key((test_ca->*private_field_table_ptr)(), "cai"s);
     ASSERT_TRUE(opt_cai_ptr);
-    auto& test_ca_cai = *opt_cai_ptr.value();
+    auto& test_ca_cai = opt_cai_ptr.value().first;
 
-    auto opt_ca_index_ptr = util::value_by_key((test_ca->*private_ion_index_table_ptr)(), "ca"s);
+    auto opt_ca_index_ptr = util::value_by_key((test_ca->*private_ion_table_ptr)(), "ca"s);
     ASSERT_TRUE(opt_ca_index_ptr);
-    auto& test_ca_ca_index = *opt_ca_index_ptr.value();
+    auto& test_ca_ca_index = opt_ca_index_ptr.value().second;
 
     double cai_contrib[3] = {200., 0., 300.};
     double test_ca_weight[3] = {0.25, 0., 1.};

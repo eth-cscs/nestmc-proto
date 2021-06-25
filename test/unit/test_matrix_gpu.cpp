@@ -11,12 +11,12 @@
 #endif
 
 #include <arbor/math.hpp>
+#include <arbor/gpu/gpu_common.hpp>
 
 #include "matrix.hpp"
 #include "memory/memory.hpp"
 #include "util/span.hpp"
 
-#include "backends/gpu/gpu_common.hpp"
 #include "backends/gpu/matrix_state_flat.hpp"
 #include "backends/gpu/matrix_state_fine.hpp"
 

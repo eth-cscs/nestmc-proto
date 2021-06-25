@@ -7,11 +7,9 @@
 #include <arbor/constants.hpp>
 #include <arbor/mechcat.hpp>
 #include <arbor/mechanism.hpp>
-#include <arbor/mechanism_ppack.hpp>
 #include <arbor/cable_cell.hpp>
 
 #include "backends/multicore/fvm.hpp"
-#include "backends/multicore/mechanism.hpp"
 #include "util/maputil.hpp"
 #include "util/range.hpp"
 
@@ -21,13 +19,12 @@
 
 using namespace arb;
 
-using backend = ::arb::multicore::backend;
+using backend = multicore::backend;
 using shared_state = backend::shared_state;
 using value_type = backend::value_type;
 using size_type = backend::size_type;
 
-// Access to more mechanism protected data:
-ACCESS_BIND(::arb::mechanism_ppack* (::arb::concrete_mechanism<backend>::*)(), pp_ptr, &::arb::concrete_mechanism<backend>::ppack_ptr);
+ACCESS_BIND(arb_mechanism_ppack mechanism::*, get_ppack, &mechanism::ppack_);
 
 TEST(synapses, add_to_cell) {
     using namespace arb;
@@ -82,10 +79,10 @@ TEST(synapses, syn_basic_state) {
 
     value_type temp_K = *neuron_parameter_defaults.temperature_K;
 
-    auto expsyn = unique_cast<multicore::mechanism>(global_default_catalogue().instance<backend>("expsyn").mech);
+    auto expsyn = unique_cast<mechanism>(global_default_catalogue().instance(backend::kind, "expsyn").mech);
     ASSERT_TRUE(expsyn);
 
-    auto exp2syn = unique_cast<multicore::mechanism>(global_default_catalogue().instance<backend>("exp2syn").mech);
+    auto exp2syn = unique_cast<mechanism>(global_default_catalogue().instance(backend::kind, "exp2syn").mech);
     ASSERT_TRUE(exp2syn);
 
     std::vector<fvm_gap_junction> gj = {};
@@ -112,8 +109,8 @@ TEST(synapses, syn_basic_state) {
     std::vector<index_type> syn_mult(num_syn, 1);
     std::vector<value_type> syn_weight(num_syn, 1.0);
 
-    expsyn->instantiate(0, state, {}, {syn_cv, syn_weight, syn_mult});
-    exp2syn->instantiate(1, state, {}, {syn_cv, syn_weight, syn_mult});
+    state.instantiate(*expsyn,  0, {}, {syn_cv, syn_weight, syn_mult});
+    state.instantiate(*exp2syn, 1, {}, {syn_cv, syn_weight, syn_mult});
 
     // Parameters initialized to default values?
 
@@ -128,19 +125,18 @@ TEST(synapses, syn_basic_state) {
     EXPECT_TRUE(all_equal_to(mechanism_field(exp2syn, "B"),    NAN));
 
     // Current and voltage views correctly hooked up?
-
     const value_type* v_ptr;
-    v_ptr = (expsyn.get()->*pp_ptr)()->vec_v_;
+    v_ptr = (expsyn.get()->*get_ppack).vec_v;
     EXPECT_TRUE(all_equal_to(util::make_range(v_ptr, v_ptr+num_comp), -65.));
 
-    v_ptr = (exp2syn.get()->*pp_ptr)()->vec_v_;
+    v_ptr = (exp2syn.get()->*get_ppack).vec_v;
     EXPECT_TRUE(all_equal_to(util::make_range(v_ptr, v_ptr+num_comp), -65.));
 
     const value_type* i_ptr;
-    i_ptr = (expsyn.get()->*pp_ptr)()->vec_i_;
+    i_ptr = (expsyn.get()->*get_ppack).vec_i;
     EXPECT_TRUE(all_equal_to(util::make_range(i_ptr, i_ptr+num_comp), 1.));
 
-    i_ptr = (exp2syn.get()->*pp_ptr)()->vec_i_;
+    i_ptr = (exp2syn.get()->*get_ppack).vec_i;
     EXPECT_TRUE(all_equal_to(util::make_range(i_ptr, i_ptr+num_comp), 1.));
 
     // Initialize state then check g, A, B have been set to zero.
@@ -164,8 +160,15 @@ TEST(synapses, syn_basic_state) {
     state.deliverable_events.init(events);
     state.deliverable_events.mark_until_after(state.time);
 
-    expsyn->deliver_events();
-    exp2syn->deliver_events();
+    auto marked = state.deliverable_events.marked_events();
+    arb_deliverable_event_stream evts;
+    evts.n_streams = marked.n;
+    evts.begin     = marked.begin_offset;
+    evts.end       = marked.end_offset;
+    evts.events    = (arb_deliverable_event_data*) marked.ev_data; // FIXME(TH): This relies on bit-castability
+
+    expsyn->deliver_events(evts);
+    exp2syn->deliver_events(evts);
 
     using fvec = std::vector<fvm_value_type>;
 

@@ -58,7 +58,7 @@ function(build_modules)
 endfunction()
 
 function("make_catalogue")
-  cmake_parse_arguments(MK_CAT "" "NAME;SOURCES;OUTPUT;ARBOR;STANDALONE;VERBOSE" "CXX_FLAGS_TARGET;MECHS" ${ARGN})
+  cmake_parse_arguments(MK_CAT "" "NAME;SOURCES;OUTPUT;PREFIX;STANDALONE;VERBOSE" "CXX_FLAGS_TARGET;MECHS" ${ARGN})
   set(MK_CAT_OUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated/${MK_CAT_NAME}")
 
   # Need to set ARB_WITH_EXTERNAL_MODCC *and* modcc
@@ -72,10 +72,10 @@ function("make_catalogue")
     message("Catalogue mechanisms: ${MK_CAT_MECHS}")
     message("Catalogue sources:    ${MK_CAT_SOURCES}")
     message("Catalogue output:     ${MK_CAT_OUT_DIR}")
-    message("Arbor source tree:    ${MK_CAT_ARBOR}")
     message("Build as standalone:  ${MK_CAT_STANDALONE}")
     message("Arbor cxx flags:      ${MK_CAT_CXX_FLAGS_TARGET}")
     message("Arbor cxx compiler:   ${ARB_CXX}")
+    message("Script prefix:        ${MK_CAT_PREFIX}")
     message("Current cxx compiler: ${CMAKE_CXX_COMPILER}")
   endif()
 
@@ -101,10 +101,10 @@ function("make_catalogue")
   endif()
 
   add_custom_command(
-    OUTPUT ${catalogue_${MK_CAT_NAME}_source}
-    COMMAND ${MK_CAT_ARBOR}/mechanisms/generate_catalogue ${catalogue_${MK_CAT_NAME}_options} ${MK_CAT_MECHS}
+    OUTPUT  ${catalogue_${MK_CAT_NAME}_source}
+    COMMAND ${MK_CAT_PREFIX}/generate_catalogue ${catalogue_${MK_CAT_NAME}_options} ${MK_CAT_MECHS}
     COMMENT "Building catalogue ${MK_CAT_NAME}"
-    DEPENDS ${MK_CAT_ARBOR}/mechanisms/generate_catalogue)
+    DEPENDS ${MK_CAT_PREFIX}/generate_catalogue)
 
   add_custom_target(${MK_CAT_NAME}_catalogue_cpp_target DEPENDS ${catalogue_${MK_CAT_NAME}_source})
   add_dependencies(build_catalogue_${MK_CAT_NAME}_mods ${MK_CAT_NAME}_catalogue_cpp_target)

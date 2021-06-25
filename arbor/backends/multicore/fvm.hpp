@@ -30,6 +30,8 @@ struct backend {
     using array  = arb::multicore::array;
     using iarray = arb::multicore::iarray;
 
+    static constexpr arb_backend_kind kind = arb_backend_kind_cpu;
+
     static util::range<const value_type*> host_view(const array& v) {
         return util::range_pointer_view(v);
     }
