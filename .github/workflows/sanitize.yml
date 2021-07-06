@@ -7,124 +7,47 @@ on:
 jobs:
   build:
     name: "Sanitize"
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-20.04
     strategy:
       fail-fast: false
       matrix:
-        name:      ["Linux Clang -fsanitize ${{ matrix.sanitizer }}"]
-        os:        ["ubuntu-20.04"]
-        cc:        ["clang-10"]
-        cxx:       ["clang++-10"]
-        py:        ["3.9"]
-        cmake:     ["3.19.x"]
-        mpi:       ["ON"]
+        name:      ["Sanitize"]
+        sanitizer: ["address", "undefined", "thread"]
         simd:      ["ON", "OFF"]
-        sanitizer: ["address", "leak", "undefined", "memory", "thread"]
     env:
-        CC:         ${{ matrix.cc }}
-        CXX:        ${{ matrix.cxx }}
-        # We set PYTHONPATH instead of installing arbor to avoid distribution/OS specific behaviour.
-        PYTHONPATH: ${{ github.workspace }}/build/python
+        CC:           clang-10
+        CXX:          clang++-10
+        ASAN_OPTIONS: detect_leaks=1
     steps:
       - name: Set up cmake
         uses: jwlawson/actions-setup-cmake@v1.7
         with:
-          cmake-version: ${{ matrix.cmake }}
-      - name: Set up Python
-        uses: actions/setup-python@v2
-        with:
-          python-version: ${{ matrix.py }}
-      - name: OpenMPI cache
-        uses: actions/cache@v2
-        id:   cache-ompi
-        with:
-          path: ~/openmpi-4.0.2
-          key:  ${{ matrix.os }}-openmpi-4.0.2-${{ matrix.cxx }}
-      - name: Build OpenMPI
-        if: ${{ steps.cache-ompi.outputs.cache-hit != 'true' }}
-        run: |
-           echo cache-hit='${{ steps.cache-ompi.outputs.cache-hit }}'
-           cd ~
-           wget https://download.open-mpi.org/release/open-mpi/v4.0/openmpi-4.0.2.tar.gz
-           tar -xvf ./openmpi-4.0.2.tar.gz
-           cd openmpi-4.0.2
-           ./configure --disable-mpi-fortran
-           make -j4
-      - name: Install OpenMPI
-        run: |
-           echo "Going to install ompi"
-           cd ~
-           cd openmpi-4.0.2
-           sudo make install
-           cd -
-      - name: Update shared library cache
-        if: ${{ startsWith(matrix.os, 'ubuntu') }}
-        run: sudo ldconfig
-      - name: Install Python packages
-        run:  pip install numpy sphinx svgwrite sphinx-rtd-theme mpi4py pandas seaborn
+          cmake-version: 3.19.x
       - name: Clone w/ submodules
         uses: actions/checkout@v2
         with:
           submodules: recursive
-      - name: Check config
-        run: |
-          $CC --version
-          $CXX --version
-          python --version
-          mpic++ --show
-          mpicc --show
-          echo $PYTHONPATH
       - name: Build arbor
         run: |
           mkdir build
           cd build
-          cmake .. -DCMAKE_BUILD_TYPE=debug -DCMAKE_CXX_FLAGS="-fsanitize=${{ matrix.sanitizer }} -fno-omit-frame-pointer" -DCMAKE_C_FLAGS="-fsanitize=${{ matrix.sanitizer }} -fno-omit-frame-pointer" -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=${{ matrix.sanitizer }}" -DCMAKE_MODULE/_LINKER_FLAGS="-fsanitize=${{ matrix.sanitizer }}" -DCMAKE_CXX_COMPILER=$CXX -DCMAKE_C_COMPILER=$CC -DARB_WITH_PYTHON=ON -DARB_VECTORIZE=${{ matrix.simd }} -DPython3_EXECUTABLE=`which python` -DARB_WITH_MPI=${{ matrix.mpi }} -DARB_USE_BUNDLED_LIBS=ON
-          make -j4 tests examples pyarb html
+          export LD_PRELOAD=$(clang -print-file-name=libclang_rt.san-x86_64.so)
+          export SAN="-fsanitize=${{ matrix.sanitizer }} -fno-omit-frame-pointer"
+          cmake .. -DCMAKE_BUILD_TYPE=debug -DCMAKE_CXX_FLAGS="$SAN" -DCMAKE_C_FLAGS="$SAN" -DCMAKE_EXE_LINKER_FLAGS="$SAN" -DCMAKE_MODULE_LINKER_FLAGS="$SAN" -DCMAKE_CXX_COMPILER=$CXX -DCMAKE_C_COMPILER=$CC -DARB_VECTORIZE=${{ matrix.simd }} -DARB_WITH_MPI=OFF -DARB_USE_BUNDLED_LIBS=ON -DARB_WITH_PYTHON=ON -DPython3_EXECUTABLE=`which python`
+          make -j4 VERBOSE=1 tests examples pyarb
           cd -
       - name: Run unit tests
         run: |
-          build/bin/unit
+          build/bin/unit --gtest_filter=-*DeathTest
           build/bin/unit-modcc
-      - if:   ${{ matrix.mpi == 'ON' }}
-        name: Run MPI tests
-        run:  mpirun -n 4 -oversubscribe build/bin/unit-mpi
-      - if:   ${{ matrix.mpi == 'OFF' }}
-        name: Run examples
+      - name: Run examples
         run: |
-            build/bin/bench
-            build/bin/brunel
-            build/bin/dryrun
-            build/bin/gap_junctions
-            build/bin/generators
-            build/bin/lfp
-            build/bin/probe-demo v
-            build/bin/ring
-            build/bin/single-cell
-      - if:   ${{ matrix.mpi == 'ON' }}
-        name: Run examples with MPI
-        run: |
-            mpirun -n 4 -oversubscribe build/bin/bench
-            mpirun -n 4 -oversubscribe build/bin/brunel
-            mpirun -n 4 -oversubscribe build/bin/dryrun
-            mpirun -n 4 -oversubscribe build/bin/gap_junctions
-            mpirun -n 4 -oversubscribe build/bin/generators
-            mpirun -n 4 -oversubscribe build/bin/lfp
-            mpirun -n 4 -oversubscribe build/bin/probe-demo v
-            mpirun -n 4 -oversubscribe build/bin/ring
-            mpirun -n 4 -oversubscribe build/bin/single-cell
-      - name: Run python tests
-        run: python python/test/unit/runner.py -v2
-      - if:   ${{ matrix.mpi == 'ON' }}
-        name: Run python+MPI tests
-        run:  mpirun -n 4 -oversubscribe python python/test/unit_distributed/runner.py -v2
-      - name: Run Python examples
-        run: |
-            python python/example/network_ring.py
-            python python/example/single_cell_model.py
-            python python/example/single_cell_recipe.py
-            python python/example/single_cell_stdp.py
-            python python/example/brunel.py -n 400 -m 100 -e 20 -p 0.1 -w 1.2 -d 1 -g 0.5 -l 5 -t 100 -s 1 -G 50 -S 123
-            python python/example/single_cell_swc.py python/example/single_cell_detailed.swc
-            python python/example/single_cell_detailed.py python/example/single_cell_detailed.swc
-            python python/example/single_cell_detailed_recipe.py python/example/single_cell_detailed.swc
-            python python/example/single_cell_cable.py
+          build/bin/bench
+          build/bin/brunel
+          build/bin/dryrun
+          build/bin/gap_junctions
+          build/bin/generators
+          build/bin/lfp
+          build/bin/probe-demo v
+          build/bin/ring
+          build/bin/single-cell

@@ -32,6 +32,9 @@
 #if __has_feature(address_sanitizer)
 #undef CAN_INSTRUMENT_MALLOC
 #endif
+#  if __has_feature(thread_sanitizer)
+#undef CAN_INSTRUMENT_MALLOC
+#  endif
 #endif
 // This is how gcc tells us.
 #if defined(__SANITIZE_ADDRESS__)
