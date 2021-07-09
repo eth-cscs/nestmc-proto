@@ -26,4 +26,4 @@ Tutorials
    single_cell_detailed_recipe
    single_cell_cable
    network_ring
-   mpi
+   network_ring_mpi

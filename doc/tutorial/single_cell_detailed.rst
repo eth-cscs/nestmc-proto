@@ -18,8 +18,13 @@ complex single cell model, and go through the process in more detail.
    6. Setting and overriding model and cell parameters.
    7. Running a simulation and visualising the results using a :class:`arbor.single_cell_model`.
 
+.. _tutorialsinglecellswc-cell:
+
+The cell
+********
+
 We start by building the cell. This will be a :ref:`cable cell <cablecell>` with complex
-geometry and dynamics which can be constructed from 3 components:
+geometry and dynamics which is constructed from 3 components:
 
 1. A **morphology** defining the geometry of the cell.
 2. A **label dictionary** storing labelled expressions which define regions and locations of
@@ -28,31 +33,12 @@ geometry and dynamics which can be constructed from 3 components:
    The decor also includes hints about how the cell is to be modelled under the hood, by
    splitting it into discrete control volumes (CV).
 
-Next, we construct a :class:`arbor.single_cell_model`. This model takes care of a lot of details
-behind the scenes: it sets up a recipe (more on recipes :ref:`here <modelrecipe>`), creates
-a simulation object, manages the hardware etc. These details become more important when modelling
-a network of cells, but can be abstracted away when working with single cell networks.
-
-The single cell model has 4 main functions:
-
-1. It holds the **global properties** of the model
-2. It registers **probes** on specific locations on the cell to measure the voltage.
-3. It **runs** the simulation.
-4. It collects **spikes** from spike detectors and voltage **traces** from registered probes.
-
-.. _tutorialsinglecellswc-cell:
-
-The cell
-********
-
-Before creating the actual cell object, we have to create its components.
-
 The morphology
 ^^^^^^^^^^^^^^^
 We begin by constructing the following morphology:
 
 .. figure:: ../gen-images/tutorial_morph.svg
-   :width: 400
+   :width: 600
    :align: center
 
 This can be done by manually building a segment tree:
@@ -94,23 +80,8 @@ The same morphology can be represented using an SWC file (interpreted according
 to :ref:`Arbor's specifications <morph-formats>`). We can save the following in
 ``single_cell_detailed.swc``.
 
-.. code-block:: python
-
-   # id,  tag,      x,      y,      z,      r,    parent
-       1     1     0.0     0.0     0.0     2.0        -1  # seg0 prox / seg9 prox
-       2     1    40.0     0.0     0.0     2.0         1  # seg0 dist
-       3     3    40.0     0.0     0.0     0.8         2  # seg1 prox
-       4     3    80.0     0.0     0.0     0.8         3  # seg1 dist / seg2 prox
-       5     3   120.0    -5.0     0.0     0.8         4  # seg2 dist / seg3 prox
-       6     3   200.0    40.0     0.0     0.4         5  # seg3 dist / seg4 prox
-       7     3   260.0    60.0     0.0     0.2         6  # seg4 dist
-       8     3   120.0    -5.0     0.0     0.5         5  # seg5 prox
-       9     3   190.0   -30.0     0.0     0.5         8  # seg5 dist / seg6 prox / seg7 prox
-      10     4   240.0   -70.0     0.0     0.2         9  # seg6 dist
-      11     4   230.0   -10.0     0.0     0.2         9  # seg7 dist / seg8 prox
-      12     4   360.0   -20.0     0.0     0.2        11  # seg8 dist
-      13     2   -70.0     0.0     0.0     0.4         1  # seg9 dist / seg10 prox
-      14     2  -100.0     0.0     0.0     0.4        13  # seg10 dist
+.. literalinclude:: ../../python/example/single_cell_detailed.swc
+   :language: python
 
 .. Note::
 
@@ -128,7 +99,7 @@ The morphology can then be loaded from ``single_cell_detailed.swc`` in the follo
 
     import arbor
 
-    # Read the morphology from an SWC file
+    # (1) Read the morphology from an SWC file
 
     morph = arbor.load_swc_arbor("single_cell_detailed.swc")
 
@@ -155,17 +126,9 @@ They can correspond to full segments or parts of segments. Our morphology alread
 pre-established regions determined by the ``tag`` parameter of the segments. They are
 defined as follows:
 
-.. code-block:: python
-
-    # Create a label dictionary
-
-    labels = arbor.label_dict()
-
-    # Add labels for tag 1, 2, 3, 4
-    labels['soma'] = '(tag 1)'
-    labels['axon'] = '(tag 2)'
-    labels['dend'] = '(tag 3)'
-    labels['last'] = '(tag 4)'
+.. literalinclude:: ../../python/example/single_cell_detailed.py
+   :language: python
+   :lines: 22-32
 
 This will generate the following regions when applied to the previously defined morphology:
 
@@ -179,13 +142,9 @@ We can also define a region that represents the whole cell; and to make things a
 a region that includes the parts of the morphology that have a radius greater than 1.5 μm. This is done
 in the following way:
 
-.. code-block:: python
-
-    # Add a label for a region that includes the whole morphology
-    labels['all'] = '(all)'
-
-    # Add a label for the parts of the morphology with radius greater than 1.5 μm.
-    labels['gt_1.5'] = '(radius-gt (region "all") 1.5)'
+.. literalinclude:: ../../python/example/single_cell_detailed.py
+   :language: python
+   :lines: 33-36
 
 This will generate the following regions when applied to the previously defined morphology:
 
@@ -201,10 +160,9 @@ segment 9.
 Finally, let's define a region that includes two already defined regions: "last" and "gt_1.5". This can
 be done as follows:
 
-.. code-block:: python
-
-    # Join regions "last" and "gt_1.5"
-    labels['custom'] = '(join (region "last") (region "gt_1.5"))'
+.. literalinclude:: ../../python/example/single_cell_detailed.py
+   :language: python
+   :lines: 37-38
 
 This will generate the following region when applied to the previously defined morphology:
 
@@ -216,11 +174,9 @@ Our label dictionary so far only contains regions. We can also add some **locati
 with a location that is the root of the morphology, and the set of locations that represent all the
 terminal points of the morphology.
 
-.. code-block:: python
-
-    # Add a labels for the root of the morphology and all the terminal points
-    labels['root'] = '(root)'
-    labels['terminal'] = '(terminal)'
+.. literalinclude:: ../../python/example/single_cell_detailed.py
+   :language: python
+   :lines: 42-44
 
 This will generate the following **locsets** (sets of one or more locations) when applied to the
 previously defined morphology:
@@ -235,13 +191,9 @@ To make things more interesting, let's select only the terminal points which bel
 previously defined "custom" region; and, separately, the terminal points which belong to the
 "axon" region:
 
-.. code-block:: python
-
-    # Add a label for the terminal locations in the "custom" region:
-    labels['custom_terminal'] = '(restrict (locset "terminal") (region "custom"))'
-
-    # Add a label for the terminal locations in the "axon" region:
-    labels['axon_terminal'] = '(restrict (locset "terminal") (region "axon"))'
+.. literalinclude:: ../../python/example/single_cell_detailed.py
+   :language: python
+   :lines: 45-48
 
 This will generate the following 2 locsets when applied to the previously defined morphology:
 
@@ -272,15 +224,9 @@ regions. It is in general better to explicitly set all the default properties of
 to avoid the confusion to having simulator-specific default values. This will therefore be our first
 step:
 
-.. code-block:: python
-
-    # Create a decor object
-    decor = arbor.decor()
-
-    # Set the default properties
-    decor.set_property(Vm =-55, tempK=300, rL=35.4, cm=0.01)
-    decor.set_ion('na', int_con=10,   ext_con=140, rev_pot=50, method='nernst/na')
-    decor.set_ion('k',  int_con=54.4, ext_con=2.5, rev_pot=-77)
+.. literalinclude:: ../../python/example/single_cell_detailed.py
+   :language: python
+   :lines: 50-57
 
 We have set the default initial membrane voltage to -55 mV; the default initial
 temperature to 300 K; the default axial resistivity to 35.4 Ω·cm; and the default membrane
@@ -298,28 +244,18 @@ dictionary earlier to be colder, and the initial voltage of the "soma" region to
 We can override the default properties by *painting* new values on the relevant regions using
 :meth:`arbor.decor.paint`.
 
-.. code-block:: python
-
-    # Override default parameters on certain regions
-
-   decor.paint('"custom"', tempK=270)
-   decor.paint('"soma"', Vm=-50)
+.. literalinclude:: ../../python/example/single_cell_detailed.py
+   :language: python
+   :lines: 59-61
 
 With the default and initial values taken care of, we now add some density mechanisms. Let's *paint*
 a *pas* mechanism everywhere on the cell using the previously defined "all" region; an *hh* mechanism
 on the "custom" region; and an *Ih* mechanism on the "dend" region. The *Ih* mechanism is explicitly
 constructed in order to change the default values of its 'gbar' parameter.
 
-
-.. code-block:: python
-
-   # Paint density mechanisms on certain regions
-
-   from arbor import mechanism as mech
-
-   decor.paint('"all"', 'pas')
-   decor.paint('"custom"', 'hh')
-   decor.paint('"dend"',  mech('Ih', {'gbar': 0.001}))
+.. literalinclude:: ../../python/example/single_cell_detailed.py
+   :language: python
+   :lines: 8,62-66
 
 The decor object is also used to *place* stimuli and spike detectors on the cell using :meth:`arbor.decor.place`.
 We place 3 current clamps of 2 nA on the "root" locset defined earlier, starting at time = 10, 30, 50 ms and
@@ -327,14 +263,9 @@ lasting 1ms each. As well as spike detectors on the "axon_terminal" locset for v
 Every placement gets a label. The labels of detectors and synapses are used to form connection from and to them
 in the recipe.
 
-.. code-block:: python
-
-   # Place stimuli and spike detectors on certain locsets
-
-   decor.place('"root"', arbor.iclamp(10, 1, current=2), 'iclamp0')
-   decor.place('"root"', arbor.iclamp(30, 1, current=2), 'iclamp1')
-   decor.place('"root"', arbor.iclamp(50, 1, current=2), 'iclamp2')
-   decor.place('"axon_terminal"', arbor.spike_detector(-10), 'detector')
+.. literalinclude:: ../../python/example/single_cell_detailed.py
+   :language: python
+   :lines: 68-72
 
 .. Note::
 
@@ -352,30 +283,24 @@ The user controls the discretisation using a :class:`arbor.cv_policy`. There are
 choose from, and they can be composed with one another. In this example, we would like the "soma" region
 to be a single CV, and the rest of the morphology to be comprised of CVs with a maximum length of 1 μm:
 
-.. code-block:: python
+.. literalinclude:: ../../python/example/single_cell_detailed.py
+   :language: python
+   :lines: 74-81
 
-   # Single CV for the "soma" region
-   soma_policy = arbor.cv_policy_single('"soma"')
+Finally, we create the cell.
 
-   # CVs with max length = 1 μm as default
-   dflt_policy = arbor.cv_policy_max_extent(1.0)
-
-   # default policy everywhere except the soma
-   policy = dflt_policy | soma_policy
-
-   decor.discretization(policy)
-
+.. literalinclude:: ../../python/example/single_cell_detailed.py
+   :language: python
+   :lines: 83-85
 
 The model
 *********
 
-We begin by constructing an :class:`arbor.single_cell_model` of the cell we just created.
+Having created the cell, we construct an :class:`arbor.single_cell_model`.
 
-.. code-block:: python
-
-   # Construct the model
-
-   model = arbor.single_cell_model(cell)
+.. literalinclude:: ../../python/example/single_cell_detailed.py
+   :language: python
+   :lines: 87-89
 
 The global properties
 ^^^^^^^^^^^^^^^^^^^^^
@@ -415,13 +340,9 @@ model:
 
 .. _tutorialsinglecellswc-gprop:
 
-.. code-block:: python
-
-   # Set the model default properties
-
-   model.properties.set_property(Vm =-65, tempK=300, rL=35.4, cm=0.01)
-   model.properties.set_ion('na', int_con=10,   ext_con=140, rev_pot=50, method='nernst/na')
-   model.properties.set_ion('k',  int_con=54.4, ext_con=2.5, rev_pot=-77)
+.. literalinclude:: ../../python/example/single_cell_detailed.py
+   :language: python
+   :lines: 91-95
 
 We set the same properties as we did earlier when we were creating the *decor* of the cell, except
 for the initial membrane voltage, which is -65 mV as opposed to -55 mV.
@@ -430,14 +351,9 @@ During the decoration step, we also made use of 3 mechanisms: *pas*, *hh* and *I
 the *pas* and *hh* mechanisms are in the default Arbor catalogue, whereas the *Ih* mechanism is in
 the "allen" catalogue. We can extend the default catalogue as follow:
 
-.. code-block:: python
-
-   # Extend the default catalogue with the allen catalogue.
-   # The function takes a second string parameter that can prefix
-   # the name of the mechanisms to avoid collisions between catalogues
-   # in this case we have no collisions so we use an empty prefix string.
-
-   model.catalogue.extend(arbor.allen_catalogue(), "")
+.. literalinclude:: ../../python/example/single_cell_detailed.py
+   :language: python
+   :lines: 97-101
 
 Now all three mechanisms in the *decor* object have been made available to the model.
 
@@ -450,22 +366,18 @@ measure at this point is the spikes from the spike detectors placed in the decor
 The :class:`arbor.single_cell_model` can also measure the voltage on specific locations of the cell.
 We can indicate the location we would like to probe using labels from the :class:`label_dict`:
 
-.. code-block:: python
-
-   # Add voltage probes on the "custom_terminal" locset
-   # which sample the voltage at 50 kHz
-
-   model.probe('voltage', where='"custom_terminal"', frequency=50)
+.. literalinclude:: ../../python/example/single_cell_detailed.py
+   :language: python
+   :lines: 103-107
 
 The simulation
 ^^^^^^^^^^^^^^
 
 The cell and model descriptions are now complete and we can run the simulation:
 
-.. code-block:: python
-
-   # Run the simulation for 100 ms, with a dt of 0.025 ms
-   model.run(tfinal=100, dt=0.025)
+.. literalinclude:: ../../python/example/single_cell_detailed.py
+   :language: python
+   :lines: 109-111
 
 The results
 ^^^^^^^^^^^
@@ -474,32 +386,18 @@ Finally we move on to the data collection segment of the example. We have added 
 on the "axon_terminal" locset. The :class:`arbor.single_cell_model` automatically registers all
 spikes on the cell from all spike detectors on the cell and saves the times at which they occurred.
 
-.. code-block:: python
-
-   # Print the number of spikes.
-   print(len(model.spikes), 'spikes recorded:')
-
-   # Print the spike times.
-   for s in model.spikes:
-       print(s)
-
+.. literalinclude:: ../../python/example/single_cell_detailed.py
+   :language: python
+   :lines: 113-117
 
 A more interesting result of the simulation is perhaps the output of the voltage probe previously
 placed on the "custom_terminal" locset. The model saves the output of the probes as [time, value]
 pairs which can then be plotted. We use `pandas` and `seaborn` for the plotting, but the user can
 choose the any other library:
 
-.. code-block:: python
-
-   import pandas
-   import seaborn
-
-   # Plot the output of the probes
-   df = pandas.DataFrame()
-   for t in model.traces:
-      df=df.append(pandas.DataFrame({'t/ms': t.time, 'U/mV': t.value, 'Location': str(t.location), 'Variable': t.variable}))
-
-   seaborn.relplot(data=df, kind="line", x="t/ms", y="U/mV",hue="Location",col="Variable",ci=None).savefig('single_cell_detailed_result.svg')
+.. literalinclude:: ../../python/example/single_cell_detailed.py
+   :language: python
+   :lines: 5,6,118-125
 
 The following plot is generated. The orange line is slightly delayed from the blue line, which is
 what we'd expect because branch 4 is longer than branch 3 of the morphology. We also see 3 spikes,

@@ -36,27 +36,9 @@ descriptions of ion channels, synapses, spike detectors and electrical propertie
 
 Our *single-segment HH cell* has a simple morphology and dynamics, constructed as follows:
 
-.. code-block:: python
-
-    import arbor
-
-    # (1) Create a morphology with a single (cylindrical) segment of length=diameter=6 μm
-    tree = arbor.segment_tree()
-    tree.append(arbor.mnpos, arbor.mpoint(-3, 0, 0, 3), arbor.mpoint(3, 0, 0, 3), tag=1)
-
-    # (2) Define the soma and its midpoint
-    labels = arbor.label_dict({'soma':   '(tag 1)',
-                               'midpoint': '(location 0 0.5)'})
-
-    # (3) Create and set up a decor object
-    decor = arbor.decor()
-    decor.set_property(Vm=-40)
-    decor.paint('"soma"', 'hh')
-    decor.place('"midpoint"', arbor.iclamp( 10, 2, 0.8), 'iclamp')
-    decor.place('"midpoint"', arbor.spike_detector(-10), 'detector')
-
-    # (4) Create cell
-    cell = arbor.cable_cell(tree, labels, decor)
+.. literalinclude:: ../../python/example/single_cell_model.py
+   :language: python
+   :lines: 4,6-23
 
 Step **(1)** constructs a :class:`arbor.segment_tree` (see also :ref:`segment tree<morph-segment_tree>`).
 The segment tree is the representation used to construct the morphology of a cell. A segment is
@@ -106,16 +88,18 @@ Arbor provides an interface for constructing single cell models with the
 :class:`arbor.single_cell_model` helper that creates a model from a cell description, with
 an interface for recording outputs and running the simulation.
 
-.. code-block:: python
+The single cell model has 4 main functions:
 
-    # (5) Make single cell model.
-    m = arbor.single_cell_model(cell)
+1. It holds the **global properties** of the model
+2. It registers **probes** on specific locations on the cell to measure the voltage.
+3. It **runs** the simulation.
+4. It collects **spikes** from spike detectors and voltage **traces** from registered probes.
 
-    # (6) Attach voltage probe sampling at 10 kHz (every 0.1 ms).
-    m.probe('voltage', '"midpoint"', frequency=10)
+Right now, we'll only set a probe and run the simulation.
 
-    # (7) Run simulation for 30 ms of simulated activity.
-    m.run(tfinal=30)
+.. literalinclude:: ../../python/example/single_cell_model.py
+   :language: python
+   :lines: 25-32
 
 Step **(5)** instantiates the :class:`arbor.single_cell_model`
 with our single-compartment cell.
@@ -133,21 +117,9 @@ The results
 Our cell and model have been defined and we have run our simulation. Now we can look at what
 the spike detector and a voltage probes from our model have produced.
 
-.. code-block:: python
-
-    # (8) Print spike times.
-    if len(m.spikes)>0:
-        print('{} spikes:'.format(len(m.spikes)))
-        for s in m.spikes:
-            print('{:3.3f}'.format(s))
-    else:
-        print('no spikes')
-
-    # (9) Plot the recorded voltages over time.
-    import pandas, seaborn # You may have to pip install these.
-    seaborn.set_theme() # Apply some styling to the plot
-    df = pandas.DataFrame({'t/ms': m.traces[0].time, 'U/mV': m.traces[0].value})
-    seaborn.relplot(data=df, kind="line", x="t/ms", y="U/mV",ci=None).savefig('single_cell_model_result.svg')
+.. literalinclude:: ../../python/example/single_cell_model.py
+   :language: python
+   :lines: 34-46
 
 Step **(8)** accesses :meth:`arbor.single_cell_model.spikes`
 to print the spike times. A single spike should be generated at around the same time the stimulus

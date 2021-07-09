@@ -1,16 +1,22 @@
 .. _contribdoc:
 
 Documentation
-=====================
+=============
 
 The source for `the documentation <https://docs.arbor-sim.org>`__ is
 found in the ``/doc`` subdirectory. You can add your contribution to the documentation
 in the same way you would contribute code, please see the :ref:`contribpr` section.
 
-.. todo::
-    This page is under construction.
+.. _contribdoc-tut:
 
-.. _contribdoc-update:
+Tutorials
+---------
+
+Documentation includes tutorials, which are :ref:`examples <contribexample>` with an associated
+page under ``/doc/tutorial`` explaining the goal of the example and guiding the reader through the code.
+We try to use the `literalinclude directive <https://www.sphinx-doc.org/en/master/usage/restructuredtext/directives.html#directive-literalinclude>`
+wherever possible to ensure the tutorial and example don't diverge.
+Remember to update the line numbers whenever you update the examples in the tutorial.
 
 Update policy
 -------------

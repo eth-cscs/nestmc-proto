@@ -25,7 +25,7 @@ Executing the script will run the simulation with default parameters.
 
 
 Walk-through
-**********
+************
 
 We set up a recipe for the simulation of a single dendrite with some parameters.
 

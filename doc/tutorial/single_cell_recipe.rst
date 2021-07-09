@@ -12,86 +12,35 @@ and :class:`arbor.simulation` instead of a :class:`arbor.single_cell_model`.
    **Concepts covered in this example:**
 
    1. Building a :class:`arbor.recipe`.
-   2. Using the recipe, context and domain decomposition to create a :class:`arbor.simulation`
+   2. Using the recipe, default context and domain decomposition to create an :class:`arbor.simulation`
    3. Running the simulation and visualizing the results.
 
 The cell
 --------
 
-We can immediately paste the cell description code from the
-:ref:`previous example <tutorialsinglecell-cell>` where it is explained in detail.
+Let's copy the cell description from the :ref:`previous example <tutorialsinglecell-cell>`,
+where construction of the cell is explained in detail.
 
-.. code-block:: python
-
-    import arbor
-
-    # (1) Create a morphology with a single (cylindrical) segment of length=diameter=6 μm
-    tree = arbor.segment_tree()
-    tree.append(arbor.mnpos, arbor.mpoint(-3, 0, 0, 3), arbor.mpoint(3, 0, 0, 3), tag=1)
-
-    # (2) Define the soma and its midpoint
-    labels = arbor.label_dict({'soma':   '(tag 1)',
-                              'midpoint': '(location 0 0.5)'})
-
-    # (3) Create cell and set properties
-    decor = arbor.decor()
-    decor.set_property(Vm=-40)
-    decor.paint('"soma"', 'hh')
-    decor.place('"midpoint"', arbor.iclamp( 10, 2, 0.8), 'iclamp')
-    decor.place('"midpoint"', arbor.spike_detector(-10), 'detector')
-    cell = arbor.cable_cell(tree, labels, decor)
+.. literalinclude:: ../../python/example/single_cell_recipe.py
+   :language: python
+   :lines: 4,8-23
 
 The recipe
 ----------
 
-The :class:`arbor.single_cell_model` of the previous example created a :class:`arbor.recipe` under
-the hood, and abstracted away the details so we were unaware of its existence.
+In the :ref:`previous example <tutorialsinglecell-cell>`, the :class:`arbor.single_cell_model` creates
+a :class:`arbor.recipe` under the hood, and abstracts away a few details that you may want control over
+in more complex simulations. Let's go into those abstractions and create an analogous :class:`arbor.recipe`
+manually.
 
-Creating an analogous recipe starts with creating a class that inherits from :class:`arbor.recipe`
+Creating a recipe starts with creating a class that inherits from :class:`arbor.recipe`
 and overrides and implements some of :class:`arbor.recipe` methods. Not all methods
 have to be overridden, but some will always have to be, such as :meth:`arbor.recipe.num_cells`.
 It returns `0` by default and models without cells are quite boring!
 
-.. code-block:: python
-
-    # (4) Define a recipe for a single cell and set of probes upon it.
-    # This constitutes the corresponding generic recipe version of
-    # `single_cell_model.py`.
-
-    class single_recipe (arbor.recipe):
-        def __init__(self, cell, probes):
-            # (4.1) The base C++ class constructor must be called first, to ensure that
-            # all memory in the C++ class is initialized correctly.
-            arbor.recipe.__init__(self)
-            self.the_cell = cell
-            self.the_probes = probes
-            self.the_props = arbor.neuron_cable_properties()
-            self.the_cat = arbor.default_catalogue()
-            self.the_props.register(self.the_cat)
-
-        def num_cells(self):
-            # (4.2) Override the num_cells method
-            return 1
-
-        def cell_kind(self, gid):
-            # (4.3) Override the cell_kind method
-            return arbor.cell_kind.cable
-
-        def cell_description(self, gid):
-            # (4.4) Override the cell_description method
-            return self.the_cell
-
-        def probes(self, gid):
-            # (4.5) Override the probes method
-            return self.the_probes
-
-        def global_properties(self, kind):
-            # (4.6) Override the global_properties method
-            return self.the_props
-
-    # (5) Instantiate recipe with a voltage probe located on "midpoint".
-
-    recipe = single_recipe(cell, [arbor.cable_probe_membrane_voltage('"midpoint"')])
+.. literalinclude:: ../../python/example/single_cell_recipe.py
+   :language: python
+   :lines: 25-62
 
 Step **(4)** describes the recipe that will reflect our single cell model.
 
@@ -134,27 +83,18 @@ and a domain decomposition. Fortunately, the default constructors of
 this model, and is what :class:`arbor.single_cell_model` does under the hood! We'll
 leave the details of this subject for another tutorial.
 
-.. code-block:: python
-
-    # (6) Create a default execution context and a default domain decomposition.
-
-    context = arbor.context()
-    domains = arbor.partition_load_balance(recipe, context)
+.. literalinclude:: ../../python/example/single_cell_recipe.py
+   :language: python
+   :lines: 64-67
 
 Step **(6)** sets up a default context and domains.
 
 The simulation
 --------------
 
-.. code-block:: python
-
-    # (7) Create and run simulation and set up 10 kHz (every 0.1 ms) sampling on the probe.
-    # The probe is located on cell 0, and is the 0th probe on that cell, thus has probe_id (0, 0).
-
-    sim = arbor.simulation(recipe, domains, context)
-    sim.record(arbor.spike_recording.all)
-    handle = sim.sample((0, 0), arbor.regular_schedule(0.1))
-    sim.run(tfinal=30)
+.. literalinclude:: ../../python/example/single_cell_recipe.py
+   :language: python
+   :lines: 69-75
 
 Step **(7)** instantiates the simulation and sets up the probe added in step 5. In the
 :class:`arbor.single_cell_model` version of this example, the probe frequency and
@@ -169,26 +109,9 @@ Apart from creating :class:`arbor.recipe` ourselves, we have changed nothing
 about this simulation compared to :ref:`the previous tutorial <tutorialsinglecell>`.
 If we create the same analysis of the results we therefore expect the same results.
 
-.. code-block:: python
-
-    # (8) Collect results.
-
-    spikes = sim.spikes()
-    data, meta = sim.samples(handle)[0]
-
-    if len(spikes)>0:
-        print('{} spikes:'.format(len(spikes)))
-        for t in spikes['time']:
-            print('{:3.3f}'.format(t))
-    else:
-        print('no spikes')
-
-    print("Plotting results ...")
-    seaborn.set_theme() # Apply some styling to the plot
-    df = pandas.DataFrame({'t/ms': data[:, 0], 'U/mV': data[:, 1]})
-    seaborn.relplot(data=df, kind="line", x="t/ms", y="U/mV", ci=None).savefig('single_cell_recipe_result.svg')
-
-    df.to_csv('single_cell_recipe_result.csv', float_format='%g')
+.. literalinclude:: ../../python/example/single_cell_recipe.py
+   :language: python
+   :lines: 77-94
 
 Step **(8)** plots the measured potentials during the runtime of the simulation.
 Retrieving the sampled quantities is a little different, these have to be accessed

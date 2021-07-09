@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# This script is included in documentation. Adapt line numbers if touched.
 
 import arbor
 import pandas, seaborn

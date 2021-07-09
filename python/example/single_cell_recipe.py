@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# This script is included in documentation. Adapt line numbers if touched.
 
 import arbor
 import pandas, seaborn # You may have to pip install these.
@@ -37,18 +38,23 @@ class single_recipe (arbor.recipe):
         self.the_props.register(self.the_cat)
 
     def num_cells(self):
+        # (4.2) Override the num_cells method
         return 1
 
     def cell_kind(self, gid):
+        # (4.3) Override the cell_kind method
         return arbor.cell_kind.cable
 
     def cell_description(self, gid):
+        # (4.4) Override the cell_description method
         return self.the_cell
 
     def probes(self, gid):
+        # (4.5) Override the probes method
         return self.the_probes
 
     def global_properties(self, kind):
+        # (4.6) Override the global_properties method
         return self.the_props
 
 # (5) Instantiate recipe with a voltage probe located on "midpoint".
